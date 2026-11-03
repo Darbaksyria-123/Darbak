@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://server.arcgisonline.com; connect-src 'self' https://*.supabase.co https://overpass-api.de https://overpass.kumi.systems https://maps.mail.ru https://api.open-meteo.com https://router.project-osrm.org; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="theme-color" content="#2b7a30">
+<meta name="description" content="دربك: بلاغات الطرق والخدمات في سوريا">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="دربك">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>دربك</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="splash" role="status" aria-label="جاري التحميل">
+  <div class="lg"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0112 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.3"/></svg></div>
+  <h1>دربك</h1><p>طريقك أوضح .. وسلامتك أهم</p>
+  <div class="ld"><i></i></div>
+</div>
+
+<header class="bar" id="barHome">
+  <div class="brandx"><b>دربك</b><span>طريقك أأمن مع مجتمعك</span></div>
+  <button class="ib" id="bProfile" type="button" aria-label="حسابي"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></button>
+  <button class="ib" id="bBell" type="button" aria-label="التنبيهات"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 21h4"/></svg><i class="dot" id="bellDot" hidden></i></button>
+</header>
+<header class="bar" id="barSub" hidden>
+  <button class="ib" id="bBack" type="button" aria-label="رجوع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+  <h1 id="barTitle"></h1>
+  <select class="sel" id="barGov" aria-label="المحافظة" hidden></select>
+</header>
+
+<main>
+  <section class="scr" id="s-home" aria-label="الرئيسية">
+    <div class="card scope"><span class="lbl">اختر نطاق العرض</span><select class="sel flat" id="homeGov" aria-label="المحافظة"></select></div>
+    <div class="hi"><p class="lbl" id="greet"></p><h2>كل ما تحتاجه على <b>دربك</b></h2><p>معلومات من مجتمعك المحلي تساعدك توصل بأمان.</p></div>
+    <button class="wxcard" id="homeWx" type="button"></button>
+    <div class="card mapcard">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg></div>
+      <div><span class="lbl">الخريطة التفاعلية الحية</span><h3>تابع الطريق قبل أن تنطلق</h3><p class="meta" id="homeCounts"></p></div>
+      <button class="btn primary" id="homeMapBtn" type="button">افتح الخريطة</button>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="sec"><h2>آخر البلاغات</h2><button class="link" id="homeAll" type="button">عرض الكل</button></div>
+    <ul class="list" id="homeLatest"></ul>
+    <div class="sec"><h2>خدمات قريبة</h2><button class="link" id="homeSvc" type="button">عرض الكل</button></div>
+    <div class="quick" id="homeQuick"></div>
+  </section>
+
+  <section class="scr" id="s-map" aria-label="الخريطة" hidden>
+    <div id="map"></div>
+    <div class="chips" id="chips" role="group" aria-label="فلترة"></div>
+    <div class="ctl">
+      <button class="pill" id="bSat" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>أقمار صناعية</button>
+      <button class="pill" id="bMe" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>موقعي</button>
+      <button class="pill" id="bLay" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>الطبقات</button>
+      <button class="pill" id="bDrive" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 17-7-4-7 4z"/></svg><span id="driveTxt">وضع القيادة</span></button>
+    </div>
+    <div class="route" id="route" hidden><span id="routeTxt"></span><button id="routeX" type="button">إلغاء المسار</button></div>
+    <div class="cross" id="cross" hidden aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 22s-7-6.2-7-12a7 7 0 0114 0c0 5.8-7 12-7 12z" fill="#2b7a30" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="10" r="2.8" fill="#fff"/></svg></div>
+    <div class="mapstat" id="mapStat"></div>
+    <div class="pickbar" id="pickbar" hidden>
+      <p>حرّك الخريطة لحد ما الدبوس يصير على المكان</p>
+      <div class="row"><button class="btn primary" id="pickOk" type="button">تأكيد الموقع</button><button class="btn" id="pickMe" type="button">موقعي</button><button class="btn" id="pickNo" type="button">رجوع</button></div>
+    </div>
+    <div class="detail" id="detail" hidden></div>
+  </section>
+
+  <section class="scr" id="s-feed" aria-label="البلاغات" hidden>
+    <select class="sel flat" id="feedGov" aria-label="المحافظة"></select>
+    <div class="tabs3" id="feedTabs" role="group" aria-label="الحالة"></div>
+    <ul class="list" id="feedList"></ul>
+  </section>
+
+  <section class="scr" id="s-wx" aria-label="الطقس" hidden>
+    <select class="sel flat" id="wxGov" aria-label="المحافظة"></select>
+    <div id="wxBody"></div>
+    <p class="attrib">المصدر: Open-Meteo. توقعات تقريبية لمركز المحافظة، مو قياس على الطريق.</p>
+  </section>
+
+  <section class="scr" id="s-svc" aria-label="الخدمات" hidden>
+    <select class="sel flat" id="svcGov" aria-label="المحافظة"></select>
+    <div class="svcbar"><input type="search" id="svcQ" placeholder="ابحث بالاسم…" aria-label="بحث" maxlength="60" autocomplete="off"><button type="button" class="btn" id="svcNear" aria-pressed="false">الأقرب لي</button></div>
+    <div class="kinds" id="kinds" role="group" aria-label="نوع الخدمة"></div>
+    <ul class="list" id="svcList"></ul>
+    <p class="attrib">بيانات المرافق © مساهمو OpenStreetMap (ODbL). التصنيف حسب أقرب مركز محافظة، وهو تقريبي. بتنحمّل المرافق الكثيرة (صيدليات، كازيات) لما تقرّب على الخريطة.</p>
+  </section>
+
+  <section class="scr" id="s-more" aria-label="المزيد" hidden>
+    <div class="card menu" id="moreMenu"></div>
+  </section>
+
+  <section class="scr" id="s-mine" aria-label="بلاغاتي" hidden>
+    <ul class="list" id="mineList"></ul>
+  </section>
+
+  <section class="scr" id="s-acct" aria-label="حسابي" hidden>
+    <div id="acctBody" style="display:grid;gap:14px"></div>
+  </section>
+</main>
+
+<nav id="nav" aria-label="التنقل الرئيسي">
+  <button class="tab" data-go="home" type="button"></button>
+  <button class="tab" data-go="map" type="button"></button>
+  <button class="addb" id="bAdd" type="button" aria-label="أضف بلاغ أو مرفق"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button class="tab" data-go="svc" type="button"></button>
+  <button class="tab" data-go="more" type="button"></button>
+</nav>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<form class="sheet" id="sheet" hidden aria-label="إرسال بلاغ">
+  <div class="hd"><div><p class="lbl" id="fsub">شارك ما تراه على الطريق</p><h2 id="ftitle">إرسال بلاغ</h2></div><button class="xbtn" id="fx" type="button" aria-label="إغلاق">×</button></div>
+  <div class="seg" id="seg"><button type="button" data-m="report" aria-pressed="true">بلاغ على الطريق</button><button type="button" data-m="facility" aria-pressed="false">مرفق أو خدمة</button></div>
+  <div class="fsec"><b id="typeLbl">1. شو صاير؟</b><div class="types" id="ftypes" role="group" aria-label="النوع"></div></div>
+  <div class="fsec">
+    <b>2. وين؟</b>
+    <div class="loc">
+      <div class="st" id="locSt">عم نحدد موقعك…</div>
+      <div class="row"><button class="btn" id="locGps" type="button">موقعي الحالي</button><button class="btn" id="locMap" type="button">حدد على الخريطة</button></div>
+    </div>
+  </div>
+  <div class="fsec">
+    <b>3. تفاصيل</b>
+    <label for="fname" id="fnameLbl">اسم الطريق (اختياري)<input type="text" id="fname" maxlength="80" placeholder="مثال: أوتوستراد المزة"></label>
+    <div id="fuelWrap" hidden><span class="lbl">المواد المتوفرة الآن</span>
+      <div class="checks">
+        <label><input type="checkbox" name="fuel" value="بنزين 95"> بنزين 95</label>
+        <label><input type="checkbox" name="fuel" value="بنزين عادي"> بنزين عادي</label>
+        <label><input type="checkbox" name="fuel" value="مازوت"> مازوت</label>
+      </div>
+    </div>
+    <label for="fnote">الوصف (اختياري)<textarea id="fnote" maxlength="140" placeholder="أضف تفاصيل تساعد الآخرين…"></textarea></label>
+  </div>
+  <div class="photo" id="photoWrap">
+    <input type="file" id="fphoto" accept="image/*" capture="environment">
+    <label class="pick" for="fphoto" id="fpickLbl">إرفاق صورة (اختياري)</label>
+    <img id="fprev" alt="معاينة الصورة" hidden>
+  </div>
+  <p class="meta" id="fhint"></p>
+  <p class="why" id="fwhy" role="status"></p>
+  <button class="btn primary big" id="fsend" type="submit" disabled>أرسل البلاغ</button>
+</form>
+
+<div class="sheet" id="laySheet" hidden role="dialog" aria-label="الطبقات">
+  <div class="hd"><h2>الطبقات</h2><button class="xbtn" data-close type="button" aria-label="إغلاق">×</button></div>
+  <div class="lay" id="layList"></div>
+  <p class="meta">مرافق OSM بتنحمّل حسب المنطقة اللي بتقرّب عليها. الأعداد هي اللي انحمّل لحد هلأ.</p>
+  <div class="row"><button class="btn blue" id="testAlert" type="button">جرّب التنبيه الصوتي</button><button class="btn" id="clearSeed" type="button">امسح البلاغات التجريبية</button></div>
+</div>
+
+<div class="sheet" id="infoSheet" hidden role="dialog" aria-label="الدعم والمعلومات">
+  <div class="hd"><h2>الدعم والمعلومات</h2><button class="xbtn" data-close type="button" aria-label="إغلاق">×</button></div>
+  <div class="stat"><div><b id="stNow">—</b><span>زوار الآن بكل سوريا</span></div><div><b id="stTot">—</b><span>إجمالي الزيارات</span></div></div>
+  <p class="meta" id="stNote"></p>
+  <div class="info-tabs" id="infoTabs" role="group" aria-label="الأقسام"></div>
+  <div class="infobody" id="infoBody"></div>
+</div>
+
+<button class="alertb" id="alertb" hidden type="button" role="alert" aria-live="assertive"><b>انتبه! خطر أمامك / Warning! Hazard Ahead</b><span id="alertTxt"></span></button>
+<div class="toast" id="toast" hidden role="status"></div>
+<div class="offline" id="offline" hidden role="alert">ما في نت. دربك بيشتغل بالنت بس، رجّع الاتصال لتكمل.</div>
+
+<noscript><p style="padding:24px;text-align:center">دربك بيحتاج جافاسكربت.</p></noscript>
+<script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
