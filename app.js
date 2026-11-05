@@ -456,9 +456,9 @@
     if (on) { map.removeLayer(osmTiles); sat.addTo(map); satLabels.addTo(map); } else { map.removeLayer(sat); map.removeLayer(satLabels); osmTiles.addTo(map); }
   });
 
-  function pinR(type) { return L.divIcon({ className: '', iconSize: [40, 40], iconAnchor: [20, 40], html: '<div class="pin" style="background:var(--c-' + type + ')">' + svg(type, '#fff', 20) + '</div>' }); }
-  function pinF(kind) { return L.divIcon({ className: '', iconSize: [38, 38], iconAnchor: [19, 19], html: '<div class="fpin" style="background:var(--c-' + kind + ')">' + svg(kind, '#fff', 20) + '</div>' }); }
-  function pinO(kind) { return L.divIcon({ className: '', iconSize: [30, 30], iconAnchor: [15, 15], html: '<div class="opin" style="background:var(--c-' + kind + ')">' + svg(kind, '#fff', 17) + '</div>' }); }
+  function pinR(type) { return L.divIcon({ className: '', iconSize: [28, 28], iconAnchor: [14, 28], html: '<div class="pin" style="background:var(--c-' + type + ')">' + svg(type, '#fff', 14) + '</div>' }); }
+  function pinF(kind) { return L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: '<div class="fpin" style="background:var(--c-' + kind + ')">' + svg(kind, '#fff', 14) + '</div>' }); }
+  function pinO(kind) { return L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: '<div class="opin" style="background:var(--c-' + kind + ')">' + svg(kind, '#fff', 13) + '</div>' }); }
 
   function refreshO() {
     layerO.clearLayers(); var arr = [];
@@ -571,7 +571,36 @@
     return { id: e.type[0] + e.id, kind: kind, sub: cl[1], lat: lat, lon: lon, name: (LANG === 'en' ? (t['name:en'] || t.name || t['name:ar']) : (t['name:ar'] || t.name || t['name:en'])) || '', note: note, fuel: kind === 'fuel' ? fuelOf(t) : '', ot: e.type, oid: e.id,
       addr: addrOf(t), ph: cleanPhone(t.phone || t['contact:phone'] || t['contact:mobile']), hrs: String(t.opening_hours || '').slice(0, 120), web: webOf(t), op: String(t.operator || '').slice(0, 80), em: em, ts: ts || 0 };
   }
-  function addOsm(els) { var n = 0; els.forEach(function (e) { var p = toPoi(e); if (p && !osm[p.id]) { osm[p.id] = p; n++; } }); return n; }
+  /* ===== مطارات ومعابر بحالة مؤكَّدة: بتحلّ مكان نسخ OSM القريبة منها =====
+     الإحداثيات: ويكيبيديا. الحالة: المصدر والتاريخ مكتوبين على كل بند. عدّل الحالة هون بس تتغيّر. */
+  var CST = { ok: ['يعمل', 'g'], part: ['يعمل جزئياً', 'y'], ped: ['مشاة فقط', 'y'], open: ['مفتوح', 'g'], closed: ['مغلق', 'r'] };
+  var SRC_APP = 'إدارة دربك', SRC_LC = 'Logistics Cluster (تقرير معابر ومطارات سوريا)';
+  var CUR = [
+    { id: 'cur-dam', kind: 'airport', ar: 'مطار دمشق الدولي', en: 'Damascus International Airport', code: 'DAM / OSDI', lat: 33.41056, lon: 36.51417, st: 'ok', d: '2026-11-05', src: SRC_APP, r: 6000 },
+    { id: 'cur-alp', kind: 'airport', ar: 'مطار حلب الدولي', en: 'Aleppo International Airport', code: 'ALP / OSAP', lat: 36.18056, lon: 37.22417, st: 'ok', d: '2026-11-05', src: SRC_APP, r: 6000 },
+    { id: 'cur-dez', kind: 'airport', ar: 'مطار دير الزور', en: 'Deir ez-Zor Airport', code: 'DEZ / OSDZ', lat: 35.28528, lon: 40.17583, st: 'part', d: '2026-11-05', src: SRC_APP, r: 6000 },
+    { id: 'cur-kac', kind: 'airport', ar: 'مطار القامشلي الدولي', en: 'Qamishli International Airport', code: 'KAC / OSKL', lat: 37.02056, lon: 41.19139, st: 'closed', d: '2026-11-05', src: SRC_APP, r: 6000 },
+    { id: 'cur-ltk', kind: 'airport', ar: 'مطار اللاذقية الدولي', en: 'Latakia International Airport', code: 'LTK / OSLK', lat: 35.40083, lon: 35.94861, st: 'closed', d: '2026-11-05', src: SRC_APP, r: 6000 },
+    { id: 'cur-nas', kind: 'crossing', ar: 'معبر نصيب – جابر (الأردن)', en: 'Nasib – Jaber crossing (Jordan)', lat: 32.5286, lon: 36.2008, st: 'ok', d: '2026-03-09', src: SRC_LC, r: 3000 },
+    { id: 'cur-bah', kind: 'crossing', ar: 'معبر باب الهوى – جيلفه غوزو (تركيا)', en: 'Bab al-Hawa – Cilvegözü crossing (Türkiye)', lat: 36.230639, lon: 36.692639, st: 'ok', d: '2026-03-09', src: SRC_LC, r: 3000 },
+    { id: 'cur-qaa', kind: 'crossing', ar: 'معبر البوكمال – القائم (العراق)', en: 'Abu Kamal – Al-Qa\'im crossing (Iraq)', lat: 34.4, lon: 40.98, st: 'open', d: '2026-03-09', src: SRC_LC, r: 3000, ap: 1 }
+  ];
+  function addCurated() {
+    Object.keys(osm).forEach(function (k) { if (osm[k].fallback) delete osm[k]; });
+    CUR.forEach(function (c) {
+      Object.keys(osm).forEach(function (k) { var p = osm[k]; if (!p.cur && p.kind === c.kind && dist(p, c) < c.r) delete osm[k]; });
+      osm[c.id] = { id: c.id, cur: 1, kind: c.kind, sub: c.kind === 'airport' ? 'مطار مدني' : 'معبر حدودي', lat: c.lat, lon: c.lon, name: LANG === 'en' ? c.en : c.ar, note: c.code ? 'رمز ' + c.code : '', fuel: '', ot: 'node', oid: 0, st: c.st, sd: Date.parse(c.d), ssrc: c.src, ap: c.ap || 0, ts: 0 };
+    });
+  }
+  function curInfo(it) {
+    var box = h('div', 'oinfo'), s = CST[it.st] || CST.open;
+    var st = h('p', 'cst ' + s[1]); st.appendChild(document.createTextNode('الحالة: ' + s[0])); box.appendChild(st);
+    var src = h('p', 'osmsrc'); src.appendChild(document.createTextNode('مصدر الحالة: ' + it.ssrc + ' · ' + fmtDate(it.sd)));
+    src.appendChild(document.createTextNode('مصدر الموقع: ويكيبيديا' + (it.ap ? ' (موقع تقريبي)' : '')));
+    if (Date.now() - it.sd > 90 * 86400000) src.appendChild(h('span', 'stale', 'الحالة ممكن تكون تغيّرت من هداك التاريخ، تحقق قبل السفر'));
+    box.appendChild(src); return box;
+  }
+  function addOsm(els) { var n = 0; els.forEach(function (e) { var p = toPoi(e); if (p && !osm[p.id]) { osm[p.id] = p; n++; } }); if (n) addCurated(); return n; }
 
   var chain = Promise.resolve(), cellState = {}, osmErr = false, countryState = 'idle';
   function setOsmStat() {
@@ -622,12 +651,12 @@
   }
   function loadCountry() {
     var c = load('darbak.osm.country.v4', null);
-    if (c && c.items && Date.now() - c.ts < 12 * 3600 * 1000) { c.items.forEach(function (p) { osm[p.id] = p; }); countryState = 'done'; refreshO(); setOsmStat(); return; }
+    if (c && c.items && Date.now() - c.ts < 12 * 3600 * 1000) { c.items.forEach(function (p) { if (!p.cur) osm[p.id] = p; }); addCurated(); countryState = 'done'; refreshO(); setOsmStat(); return; }
     countryState = 'loading'; setOsmStat();
     chain = chain.then(function () {
       return getPois(SYR, P_COUNTRY).then(function (j) {
         addOsm(j.elements || []); countryState = 'done'; osmErr = false;
-        save('darbak.osm.country.v4', { ts: Date.now(), items: Object.keys(osm).map(function (k) { return osm[k]; }) });
+        save('darbak.osm.country.v4', { ts: Date.now(), items: Object.keys(osm).map(function (k) { return osm[k]; }).filter(function (p) { return !p.cur; }) });
         refreshO(); setOsmStat(); renderScreen(cur);
       }).catch(function () {
         countryState = 'idle'; osmErr = true;
@@ -635,7 +664,7 @@
           [['مطار دمشق الدولي', 33.4114, 36.5156], ['مطار حلب الدولي', 36.1807, 37.2244], ['مطار اللاذقية (باسل الأسد)', 35.4009, 35.9487], ['مطار القامشلي', 37.0206, 41.1914], ['مطار دير الزور', 35.2854, 40.1759]].forEach(function (a, i) {
             osm['fb' + i] = { id: 'fb' + i, kind: 'airport', lat: a[1], lon: a[2], name: a[0], note: 'موقع تقريبي (احتياطي). بيانات OSM ما انحمّلت.', fuel: '', ot: 'node', oid: 0, fallback: 1 };
           });
-          refreshO(); renderScreen(cur);
+          addCurated(); refreshO(); renderScreen(cur);
         }
         setOsmStat();
       });
@@ -923,7 +952,7 @@
     rows.forEach(function (rw) {
       var f = rw.it, c = h('div', 'rcard');
       c.appendChild(circ(f.kind, F[f.kind].c));
-      var t = h('div'); t.appendChild(h('h3', null, f.name || f.sub || F[f.kind].n)); var tg = h('div', 'tags'); tg.appendChild(h('span', 'tag', f.sub || F[f.kind].n)); if (rw.d != null) tg.appendChild(h('span', 'tag', rw.d < 1000 ? Math.round(rw.d / 10) * 10 + ' م' : (rw.d / 1000).toFixed(1) + ' كم')); tg.appendChild(h('span', 'tag pl', '📍 ' + placeLabel(f))); if (rw.t === 'osm') tg.appendChild(h('span', 'tag osm', 'OSM')); t.appendChild(tg); c.appendChild(t);
+      var t = h('div'); t.appendChild(h('h3', null, f.name || f.sub || F[f.kind].n)); var tg = h('div', 'tags'); tg.appendChild(h('span', 'tag', f.sub || F[f.kind].n)); if (rw.d != null) tg.appendChild(h('span', 'tag', rw.d < 1000 ? Math.round(rw.d / 10) * 10 + ' م' : (rw.d / 1000).toFixed(1) + ' كم')); tg.appendChild(h('span', 'tag pl', '📍 ' + placeLabel(f))); if (rw.t === 'osm' && f.cur) tg.appendChild(h('span', 'tag cst ' + (CST[f.st] || CST.open)[1], (CST[f.st] || CST.open)[0])); else if (rw.t === 'osm') tg.appendChild(h('span', 'tag osm', 'OSM')); t.appendChild(tg); c.appendChild(t);
       if (f.fuel) c.appendChild(h('p', 'more', (rw.t === 'osm' ? 'بيبيع: ' : 'متوفر: ') + f.fuel.replace(/,/g, '،')));
       if (f.kind === 'fuel' && remote) { var fsl = h('div', 'fstat more'); c.appendChild(fsl); fslots.push([f.id, fsl]); }
       if (rw.t === 'osm' && !f.fallback) c.appendChild(osmInfo(f, true));
@@ -1061,6 +1090,7 @@
 
   /* ===== معلومات المكان من OSM + تاريخ آخر تعديل ===== */
   function osmInfo(it, compact) {
+    if (it.cur) return curInfo(it);
     var box = h('div', 'oinfo');
     function row(k, label, val, href) {
       var d = h('div', 'orow'); d.innerHTML = svg(k, 'currentColor', 17);
@@ -1091,7 +1121,8 @@
     var tags = h('div', 'tags');
     if (!isR) tags.appendChild(h('span', 'tag', it.sub || F[key].n));
     tags.appendChild(h('span', 'tag', '📍 ' + (it.city || placeLabel(it))));
-    if (okO) tags.appendChild(h('span', 'tag osm', 'من OpenStreetMap'));
+    if (okO && it.cur) tags.appendChild(h('span', 'tag cst ' + (CST[it.st] || CST.open)[1], (CST[it.st] || CST.open)[0]));
+    else if (okO) tags.appendChild(h('span', 'tag osm', 'من OpenStreetMap'));
     if (it.seed) tags.appendChild(h('span', 'tag warn', 'مثال للتجربة'));
     box.appendChild(tags);
     if (!isR && it.fuel) box.appendChild(h('p', null, (okO ? 'بيبيع (حسب OSM): ' : 'متوفر: ') + it.fuel.replace(/,/g, '،')));
@@ -1100,11 +1131,12 @@
     if (ph) { var im = h('img'); im.src = ph; im.alt = 'صورة'; box.appendChild(im); }
     else if (isR && it.has_photo) { loadPhoto(it, function () { if (selected && selected.id === it.id) renderDetail(); }); box.appendChild(h('p', 'meta', 'عم نحمّل الصورة…')); }
     if (it.note) box.appendChild(h('p', null, it.note));
-    if (okO) { if (!it.fallback) box.appendChild(osmInfo(it, false)); box.appendChild(h('p', 'meta', 'ما في حالة لحظية (مفتوح/مسكّر) بهاي البيانات. إذا شفت المعلومة غلط، بلّغ عنها.')); }
+    if (okO && it.cur) box.appendChild(osmInfo(it, false));
+    else if (okO) { if (!it.fallback) box.appendChild(osmInfo(it, false)); box.appendChild(h('p', 'meta', 'ما في حالة لحظية (مفتوح/مسكّر) بهاي البيانات. إذا شفت المعلومة غلط، بلّغ عنها.')); }
     else box.appendChild(h('p', 'meta', isR ? ago(it.at) + ' · ' + left(it) : 'أضيف ' + ago(it.at)));
     var row = h('div', 'row'), g = h('button', 'btn blue', 'رسم المسار'); g.type = 'button'; g.addEventListener('click', function () { routeTo(it.lat, it.lon); });
     row.appendChild(g);
-    if (okO && !it.fallback) { var a = h('a', 'btn', 'افتح على OSM'); a.href = 'https://www.openstreetmap.org/' + it.ot + '/' + it.oid; a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a);
+    if (okO && !it.fallback && !it.cur) { var a = h('a', 'btn', 'افتح على OSM'); a.href = 'https://www.openstreetmap.org/' + it.ot + '/' + it.oid; a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a);
       var er = h('a', 'btn', 'بلّغ عن خطأ بالمعلومات'); er.href = 'https://www.openstreetmap.org/note/new#map=19/' + it.lat + '/' + it.lon; er.target = '_blank'; er.rel = 'noopener'; row.appendChild(er); }
     box.appendChild(row);
     if (key === 'fuel' && remote) box.appendChild(fuelReportBox(it));
@@ -1359,7 +1391,7 @@
     e.preventDefault(); if (!chosen || !addLoc || sending || !canWrite()) return;
     var note = $('fnote').value.trim().slice(0, 140), nm = $('fname').value.trim().slice(0, 80), sel, p, table;
     if (addMode === 'report') {
-      var lat = Math.round(addLoc.lat * 1000) / 1000, lon = Math.round(addLoc.lng * 1000) / 1000, d = nearDup(chosen, lat, lon);
+      var lat = Math.round(addLoc.lat * 100000) / 100000, lon = Math.round(addLoc.lng * 100000) / 100000, d = nearDup(chosen, lat, lon);
       if (d) { hideSheets(); resetForm(); toast('في بلاغ مشابه قريب. أكّده بدل ما تكرّره'); openOnMap(d.lat, d.lon, 'reports', d.id, 16); return; }
       var r = { id: uuid(), type: chosen, lat: lat, lon: lon, road: nm, note: note, photo: safePhoto(photoData), at: Date.now(), yes: 1, no: 0, owner: owner };
       table = 'reports'; p = addItem(table, r); sel = { t: table, id: r.id, lat: r.lat, lon: r.lon };
@@ -1558,6 +1590,7 @@
       ms.forEach(function (m) { if (m.type === 'characterData') trNode(m.target); else if (m.type === 'attributes') trNode(m.target); else m.addedNodes.forEach(function (n) { if (n.nodeType === 1) trTree(n); else trNode(n); }); });
     }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: TR_ATTR });
     trTree(document.body);
+    d.classList.remove('trp');
   })();
   renderChips();
   if (remote) { handleAuthHash(); refresh(); syncMine(); setInterval(function () { if (!document.hidden) refresh(); }, 15000); document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); }); }
@@ -1568,7 +1601,7 @@
   window.addEventListener('online', function () { setOnline(true); });
   window.addEventListener('offline', function () { setOnline(false); });
   drawPins(); go('home', { root: true });
-  plLoad(); loadCountry(); loadWx(); setOsmStat();
+  addCurated(); refreshO(); plLoad(); loadCountry(); loadWx(); setOsmStat();
   setTimeout(function () { $('splash').classList.add('out'); setTimeout(function () { $('splash').remove(); }, 400); }, 1100);
   $('splash').addEventListener('click', function () { this.classList.add('out'); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });

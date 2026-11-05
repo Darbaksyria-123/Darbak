@@ -419,3 +419,19 @@ body { background-color: #e2f0e7; background-image: url("data:image/svg+xml;utf8
 .meta.pl, .tag { font-weight: 700; }
 .meta.pl { color: #0b5a3a; }
 .rcard .oinfo, .rcard .fstat { grid-column: 1 / -1; }
+
+/* منع وميض النص العربي قبل ما تخلص الترجمة للإنكليزي */
+html.trp body { visibility: hidden; }
+
+/* دبابيس أصغر */
+.pin { width: 28px; height: 28px; border-width: 2.5px; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+.pin svg { width: 14px; height: 14px; }
+.fpin { width: 26px; height: 26px; border-width: 2.5px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+.fpin svg { width: 14px; height: 14px; }
+.opin { width: 22px; height: 22px; border-width: 2px; border-radius: 7px; box-shadow: 0 2px 5px rgba(0,0,0,.4); }
+.opin svg { width: 13px; height: 13px; }
+
+/* حالة المعابر والمطارات */
+.cst { font-weight: 800; border-radius: 20px; padding: 3px 11px; width: fit-content; color: #fff; }
+.cst.g { background: #1b7a4b; } .cst.y { background: #8a5a00; } .cst.r { background: #a31515; }
+p.cst { font-size: 13px; margin: 0; }
