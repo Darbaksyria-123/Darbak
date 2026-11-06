@@ -58,6 +58,8 @@
     fuel: '<path d="M6 20V6a1 1 0 011-1h7a1 1 0 011 1v14"/><path d="M5 20h11M6 11h9M15 9h2l2 2v6a1.5 1.5 0 01-3 0v-3h-1"/>',
     pharmacy: '<path d="M8 4h8l1 4H7z"/><path d="M7 8v11a1 1 0 001 1h8a1 1 0 001-1V8"/><path d="M12 11v5M9.5 13.5h5"/>',
     restaurant: '<path d="M7 3v8M4 3v5a3 3 0 006 0V3M7 11v10"/><path d="M17 21V3c-2.5 1.5-3.5 4-3.5 7 0 2 1 3 3.5 3"/>',
+    bakery: '<path d="M4 10a4 4 0 014-4h8a4 4 0 014 4v1a2 2 0 01-2 2v5a1 1 0 01-1 1H7a1 1 0 01-1-1v-5a2 2 0 01-2-2z"/><path d="M9 10v2M12 10v2M15 10v2"/>',
+    exchange: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
     rest: '<path d="M4 10h13v5a4 4 0 01-4 4H8a4 4 0 01-4-4z"/><path d="M17 11h2a2 2 0 010 5h-2M8 3c0 2 1.5 2 1.5 4M12 3c0 2 1.5 2 1.5 4"/>',
     hotel: '<path d="M3 18V7M3 14h18v4M21 14v-2a3 3 0 00-3-3h-7v5"/><circle cx="7" cy="11" r="1.6"/>',
     municipality: '<path d="M3 20h18M5 20V10l7-5 7 5v10"/><path d="M9 20v-6h6v6"/>',
@@ -99,6 +101,8 @@
     pharmacy:     { n: 'صيدلية',          c: '#1f5fe0', add: 1 },
     restaurant:   { n: 'مطعم / مقهى',      c: '#d62839', add: 1 },
     rest:         { n: 'استراحة طريق',     c: '#8a5a00', add: 1 },
+    bakery:       { n: 'مخبز / فرن',       c: '#7c4a1e', add: 1 },
+    exchange:     { n: 'مكتب صرافة',      c: '#0e7490', add: 1 },
     hotel:        { n: 'فندق / مكان إقامة', c: '#6d28d9', add: 1 },
     police:       { n: 'مخفر شرطة / أمن طرق', c: '#1740b8', add: 1 },
     ambulance:    { n: 'إسعاف',           c: '#c2185b', add: 1 },
@@ -175,7 +179,11 @@
   var owner = session ? session.uid : deviceOwner;
   var mineIds = remote ? {} : load(MK, {});              /* بالخادم: بتنجلب من my_ids بعد الدخول */
   var profile = load(PK, null) || { name: '', since: Date.now() }; save(PK, profile);
-  var settings = Object.assign({ voice: true, vib: true }, load(STK, {}));
+  var settings = Object.assign({ voice: true, vib: true, old: false }, load(STK, {}));
+  /* خدمات OSM اللي آخر تعديل عليها قبل 2024 بتنخفي افتراضياً (بتظهر من حسابي). المطارات والمعابر المؤكَّدة ما بتتأثر */
+  var OLD_TS = Date.UTC(2024, 0, 1);
+  function oldO(p) { return !settings.old && !p.cur && p.ts > 0 && p.ts < OLD_TS; }
+  function oldCount() { var n = 0; Object.keys(osm).forEach(function (k) { if (oldO(osm[k])) n++; }); return n; }
   var votes = remote ? {} : load(VK, {});
   var reports = [], facs = [], photoCache = {};
   var online = navigator.onLine !== false;
@@ -463,7 +471,7 @@
   function refreshO() {
     layerO.clearLayers(); var arr = [];
     Object.keys(osm).forEach(function (id) {
-      var p = osm[id]; if (!vis[p.kind]) return;
+      var p = osm[id]; if (!vis[p.kind] || oldO(p)) return;
       if (!p.m) { p.m = L.marker([p.lat, p.lon], { icon: pinO(p.kind), title: p.name || F[p.kind].n }); p.m.on('click', function () { selected = { t: 'osm', id: id }; renderDetail(); }); }
       arr.push(p.m);
     });
@@ -522,7 +530,7 @@
   }
   function qBody(bb, parts) { var b = '(' + bb.join(',') + ')'; return '[out:json][timeout:45];(' + parts.map(function (p) { return 'nwr' + p + b + ';'; }).join('') + ');out center tags meta;'; }
   var P_COUNTRY = ['["amenity"="hospital"]', '["amenity"="police"]', '["amenity"="fire_station"]', '["emergency"="ambulance_station"]', '["amenity"="townhall"]', '["aeroway"="aerodrome"]', '["barrier"="border_control"]'];
-  var P_CELL = ['["amenity"="pharmacy"]', '["amenity"="fuel"]', '["amenity"="clinic"]', '["tourism"~"^(hotel|guest_house|hostel|motel|apartment)$"]', '["amenity"~"^(restaurant|cafe|fast_food)$"]', '["highway"~"^(rest_area|services)$"]', '["office"="government"]["name"~"نفوس"]'];
+  var P_CELL = ['["amenity"="pharmacy"]', '["amenity"="fuel"]', '["amenity"="clinic"]', '["tourism"~"^(hotel|guest_house|hostel|motel|apartment)$"]', '["amenity"~"^(restaurant|cafe|fast_food)$"]', '["highway"~"^(rest_area|services)$"]', '["shop"="bakery"]', '["amenity"="bureau_de_change"]', '["amenity"="money_transfer"]', '["shop"="money_transfer"]', '["office"="government"]["name"~"نفوس"]'];
   var SYR = [32.2, 35.6, 37.4, 42.4];
 
   var STAY = { hotel: 'فندق', guest_house: 'بيت ضيافة', hostel: 'نزل', motel: 'موتيل', apartment: 'شقق مفروشة' };
@@ -544,6 +552,9 @@
     if (t.amenity === 'restaurant') return ['restaurant', 'مطعم'];
     if (t.amenity === 'cafe') return ['restaurant', 'مقهى'];
     if (t.amenity === 'fast_food') return ['restaurant', 'وجبات سريعة'];
+    if (t.shop === 'bakery') return ['bakery', 'مخبز'];
+    if (t.amenity === 'bureau_de_change') return ['exchange', 'مكتب صرافة'];
+    if (t.amenity === 'money_transfer' || t.shop === 'money_transfer') return ['exchange', 'حوالات وصرافة'];
     if (t.highway === 'rest_area' || t.highway === 'services') return ['rest', 'استراحة طريق'];
     if (STAY[t.tourism]) return ['hotel', STAY[t.tourism]];
     if (t.amenity === 'police') return /مرور|أمن الطرق|شرطة الطرق|traffic|highway/i.test((t.name || '') + ' ' + (t['name:ar'] || '') + ' ' + (t['name:en'] || '')) ? ['police', 'شرطة مرور / أمن طرق'] : ['police', 'مخفر شرطة'];
@@ -779,7 +790,7 @@
       box.appendChild(h('span', 's', gov + (visTxt(w.vis) ? ' · ' + visTxt(w.vis) : '') + ' · اضغط للتفاصيل'));
       if (w.al.length) { var al = h('div', 'al'); w.al.forEach(function (a) { al.appendChild(h('span', null, a.t)); }); box.appendChild(al); }
     }
-    var nr = reports.filter(live).length, ns = Object.keys(osm).length + facs.filter(facOk).length;
+    var nr = reports.filter(live).length, ns = Object.keys(osm).length - oldCount() + facs.filter(facOk).length;
     $('homeCounts').textContent = nr + ' بلاغ نشط · تتحدّث كل 15 ث';
     var tiles = $('tiles'); tiles.textContent = '';
     [['accident', 'الحوادث', 'accident', '#c62828'], ['blocked', 'الإغلاقات', 'blocked', '#e65100'], ['checkpoint', 'الازدحام', 'checkpoint', '#2a62b0'], ['wx', 'الطقس', 'wx', '#0b6e99']].forEach(function (x) {
@@ -857,7 +868,7 @@
     var out = [], ql = q.toLowerCase();
     GOV.forEach(function (g) { if (g.n.toLowerCase().indexOf(ql) > -1) out.push({ n: g.n, s: 'محافظة', lat: g.lat, lon: g.lon, z: 11 }); });
     facs.forEach(function (f) { if (facOk(f) && (f.name || '').toLowerCase().indexOf(ql) > -1) out.push({ n: f.name, s: F[f.kind].n + ' · ' + govOf(f), lat: f.lat, lon: f.lon, z: 17, t: 'facilities', id: f.id }); });
-    Object.keys(osm).forEach(function (id) { var p = osm[id]; if (out.length < 12 && F[p.kind] && (p.name || '').toLowerCase().indexOf(ql) > -1) out.push({ n: p.name, s: F[p.kind].n + ' · ' + govOf(p), lat: p.lat, lon: p.lon, z: 17, t: 'osm', id: id }); });
+    Object.keys(osm).forEach(function (id) { var p = osm[id]; if (out.length < 12 && F[p.kind] && !oldO(p) && (p.name || '').toLowerCase().indexOf(ql) > -1) out.push({ n: p.name, s: F[p.kind].n + ' · ' + govOf(p), lat: p.lat, lon: p.lon, z: 17, t: 'osm', id: id }); });
     if (ql.length > 1 && PL.n) { var pc = 0; Object.keys(PL.grid).some(function (k) { return PL.grid[k].some(function (a) { var nm = (LANG === 'en' && a[4]) ? a[4] : a[2]; if (nm.toLowerCase().indexOf(ql) > -1) { out.unshift({ n: nm, s: ({ c: 'مدينة', t: 'بلدة', v: 'قرية', h: 'قرية' }[a[3]] || 'قرية') + ' · ' + govOf({ lat: a[0], lon: a[1] }), lat: a[0], lon: a[1], z: a[3] === 'c' ? 12 : 14 }); pc++; } return pc >= 5; }); }); }
     return out.slice(0, 8);
   }
@@ -898,7 +909,7 @@
 
   /* ===== شاشة الخدمات ===== */
   var svcKind = null, svcNear = false, svcSrc = 'all';
-  var SG = [['fuel', 'محروقات', ['fuel']], ['hospital', 'مشافي ومراكز طبية', ['hospital']], ['pharmacy', 'صيدليات', ['pharmacy']], ['restaurant', 'مطاعم ومقاهي', ['restaurant']], ['rest', 'استراحات الطرق', ['rest']], ['hotel', 'فنادق وإقامة', ['hotel']], ['police', 'شرطة وأمن طرق', ['police']], ['airport', 'مطارات مدنية', ['airport']], ['emg', 'إسعاف وإطفاء', ['ambulance', 'fire']], ['municipality', 'بلديات', ['municipality']], ['registry', 'دوائر نفوس', ['registry']], ['crossing', 'معابر حدودية', ['crossing']]];
+  var SG = [['fuel', 'محروقات', ['fuel']], ['hospital', 'مشافي ومراكز طبية', ['hospital']], ['pharmacy', 'صيدليات', ['pharmacy']], ['restaurant', 'مطاعم ومقاهي', ['restaurant']], ['rest', 'استراحات الطرق', ['rest']], ['hotel', 'فنادق وإقامة', ['hotel']], ['police', 'شرطة وأمن طرق', ['police']], ['airport', 'مطارات مدنية', ['airport']], ['bakery', 'مخابز', ['bakery']], ['exchange', 'مكاتب صرافة', ['exchange']], ['emg', 'إسعاف وإطفاء', ['ambulance', 'fire']], ['municipality', 'بلديات', ['municipality']], ['registry', 'دوائر نفوس', ['registry']], ['crossing', 'معابر حدودية', ['crossing']]];
   function sgHas(kind) { for (var i = 0; i < SG.length; i++) if (SG[i][0] === svcKind) return SG[i][2].indexOf(kind) > -1; return true; }
   $('svcQ').addEventListener('input', function () { renderSvc(); });
   $('svcNear').addEventListener('click', function () {
@@ -937,9 +948,9 @@
     var rows = [], q = ($('svcQ').value || '').trim().toLowerCase();
     function qok(f) { return !q || ((f.name || '') + ' ' + (f.sub || '') + ' ' + F[f.kind].n + ' ' + placeLabel(f)).toLowerCase().indexOf(q) > -1; }
     if (svcSrc !== 'osm') facs.forEach(function (f) { if (facOk(f) && govOf(f) === gov && (!svcKind || sgHas(f.kind)) && qok(f)) rows.push({ t: 'facilities', it: f, user: 1 }); });
-    if (svcSrc !== 'user') Object.keys(osm).forEach(function (id) { var p = osm[id]; if ((!svcKind || sgHas(p.kind)) && govOf(p) === gov && qok(p)) rows.push({ t: 'osm', it: p }); });
+    if (svcSrc !== 'user') Object.keys(osm).forEach(function (id) { var p = osm[id]; if (!oldO(p) && (!svcKind || sgHas(p.kind)) && govOf(p) === gov && qok(p)) rows.push({ t: 'osm', it: p }); });
     $('svcNear').setAttribute('aria-pressed', svcNear && me ? 'true' : 'false');
-    if (!rows.length) { ul.appendChild(h('li', 'empty', Object.keys(osm).length ? 'ما في خدمات بهاي المحافظة بالنوع المختار.' : (osmErr ? 'تعذّر تحميل بيانات OpenStreetMap، تأكد من النت.' : 'عم نحمّل البيانات من OpenStreetMap…'))); return; }
+    if (!rows.length) { ul.appendChild(h('li', 'empty', Object.keys(osm).length ? 'ما في خدمات بهاي المحافظة بالنوع المختار.' + (oldCount() ? ' (فيه ' + oldCount() + ' خدمة قديمة مخفية، بتقدر تظهرها من حسابي.)' : '') : (osmErr ? 'تعذّر تحميل بيانات OpenStreetMap، تأكد من النت.' : 'عم نحمّل البيانات من OpenStreetMap…'))); return; }
     if (svcKind === 'fuel' && remote && svcFA) {
       if (!fuelSkip) { fuelLoad(rows.map(function (r) { return r.it.id; }), function () { fuelSkip = true; renderSvc(); fuelSkip = false; }); ul.appendChild(h('li', 'empty', 'عم نجيب حالة المحروقات…')); return; }
       rows = rows.filter(function (r) { var s = fcache[r.it.id]; return s && s.d[svcFA] && s.d[svcFA].a; });
@@ -954,7 +965,8 @@
       c.appendChild(circ(f.kind, F[f.kind].c));
       var t = h('div'); t.appendChild(h('h3', null, f.name || f.sub || F[f.kind].n)); var tg = h('div', 'tags'); tg.appendChild(h('span', 'tag', f.sub || F[f.kind].n)); if (rw.d != null) tg.appendChild(h('span', 'tag', rw.d < 1000 ? Math.round(rw.d / 10) * 10 + ' م' : (rw.d / 1000).toFixed(1) + ' كم')); tg.appendChild(h('span', 'tag pl', '📍 ' + placeLabel(f))); if (rw.t === 'osm' && f.cur) tg.appendChild(h('span', 'tag cst ' + (CST[f.st] || CST.open)[1], (CST[f.st] || CST.open)[0])); else if (rw.t === 'osm') tg.appendChild(h('span', 'tag osm', 'OSM')); t.appendChild(tg); c.appendChild(t);
       if (f.fuel) c.appendChild(h('p', 'more', (rw.t === 'osm' ? 'بيبيع: ' : 'متوفر: ') + f.fuel.replace(/,/g, '،')));
-      if (f.kind === 'fuel' && remote) { var fsl = h('div', 'fstat more'); c.appendChild(fsl); fslots.push([f.id, fsl]); }
+      if (hasStat(f.kind) && remote) { var fsl = h('div', 'fstat more'); c.appendChild(fsl); fslots.push([f.id, fsl, f.kind]); }
+      if (f.kind === 'exchange') c.appendChild(h('p', 'warnbox', EXW));
       if (rw.t === 'osm' && !f.fallback) c.appendChild(osmInfo(f, true));
       if (f.note) c.appendChild(h('p', 'more meta', f.note));
       var row = h('div', 'row more'), go1 = h('button', 'btn', 'أظهر على الخريطة'), rt = h('button', 'btn blue', 'رسم المسار'); go1.type = rt.type = 'button';
@@ -963,7 +975,7 @@
       row.appendChild(go1); row.appendChild(rt); c.appendChild(row);
       var li = h('li'); li.appendChild(c); ul.appendChild(li);
     });
-    if (fslots.length) fuelLoad(fslots.map(function (x) { return x[0]; }), function () { fslots.forEach(function (x) { x[1].textContent = ''; x[1].appendChild(fuelChips(x[0], false)); }); });
+    if (fslots.length) fuelLoad(fslots.map(function (x) { return x[0]; }), function () { fslots.forEach(function (x) { x[1].textContent = ''; x[1].appendChild(fuelChips(x[0], false, x[2])); }); });
     if (total > rows.length) ul.appendChild(h('li', 'empty', 'عم نعرض أول ' + rows.length + ' من ' + total + '. اختار نوع محدد لتضيّق النتائج.'));
   }
 
@@ -1032,7 +1044,9 @@
     wrap.appendChild(ed); wrap.appendChild(del); return wrap;
   }
   /* ===== حالة المحروقات: بنزين / مازوت / غاز (متوفر أو غير متوفر) ===== */
-  var FT = [['petrol', 'بنزين'], ['diesel', 'مازوت'], ['gas', 'غاز']], fcache = {}, fuelSkip = false, svcFA = '';
+  var FT = [['petrol', 'بنزين'], ['diesel', 'مازوت'], ['gas', 'غاز']], FTS = { fuel: FT, bakery: [['bread', 'الخبز']] }, fcache = {}, fuelSkip = false, svcFA = '';
+  function hasStat(k) { return k === 'fuel' || k === 'bakery'; }
+  var EXW = '⚠ دربك بيعرض موقع المكان بس، ما بيعرض أسعار صرف. تأكد من الجهة قبل أي تعامل.';
   function fuelLoad(ids, cb) {
     if (!remote) { cb(); return; }
     var need = ids.filter(function (i) { return !fcache[i] || Date.now() - fcache[i].t > 60000; });
@@ -1045,23 +1059,23 @@
       });
     })).then(function () { cb(); }, function () { cb(); });
   }
-  function fuelChips(id, withTime) {
-    var box = h('div', 'fchips'), d = (fcache[id] && fcache[id].d) || {}, any = false;
-    FT.forEach(function (f) {
+  function fuelChips(id, withTime, kind) {
+    var FX = FTS[kind || 'fuel'], box = h('div', 'fchips'), d = (fcache[id] && fcache[id].d) || {}, any = false;
+    FX.forEach(function (f) {
       var s = d[f[0]], c = h('span', 'fchip ' + (s ? (s.a ? 'ok' : 'bad') : 'unk'));
       c.textContent = f[1] + ': ' + (s ? (s.a ? 'متوفر ✓' : 'غير متوفر ✕') : 'ما في معلومة');
       if (s) any = true; box.appendChild(c);
     });
     if (withTime && any) {
-      var t = 0, n = 0; FT.forEach(function (f) { var s = d[f[0]]; if (s) { t = Math.max(t, s.at); n = Math.max(n, s.n); } });
+      var t = 0, n = 0; FX.forEach(function (f) { var s = d[f[0]]; if (s) { t = Math.max(t, s.at); n = Math.max(n, s.n); } });
       box.appendChild(h('span', 'fnote', 'آخر تحديث ' + ago(t) + (n > 1 ? ' · أكّده ' + n : '')));
-    } else if (withTime) box.appendChild(h('span', 'fnote', 'ما حدا حدّث حالة هاي الكازية بآخر 12 ساعة'));
+    } else if (withTime) box.appendChild(h('span', 'fnote', kind === 'bakery' ? 'ما حدا حدّث حالة هاد الفرن بآخر 12 ساعة' : 'ما حدا حدّث حالة هاي الكازية بآخر 12 ساعة'));
     return box;
   }
   function fuelReportBox(it) {
-    var box = h('div', 'fbox'), sel = {}, btns = [];
-    box.appendChild(h('h4', null, 'شو الوضع هلأ؟ حدّث الحالة'));
-    FT.forEach(function (f) {
+    var bk = it.kind === 'bakery', FX = FTS[bk ? 'bakery' : 'fuel'], box = h('div', 'fbox'), sel = {}, btns = [];
+    box.appendChild(h('h4', null, bk ? 'هل الخبز متوفر هلأ؟ حدّث الحالة' : 'شو الوضع هلأ؟ حدّث الحالة'));
+    FX.forEach(function (f) {
       var row = h('div', 'frow'); row.appendChild(h('span', 'fl', f[1]));
       [[true, 'متوفر', 'ok'], [false, 'غير متوفر', 'bad']].forEach(function (o) {
         var b = h('button', 'fb ' + o[2], o[1]); b.type = 'button'; b.setAttribute('aria-pressed', 'false');
@@ -1075,16 +1089,17 @@
       if (!canWrite()) return;
       if (!Object.keys(sel).length) { toast('اختار حالة وحدة على الأقل'); return; }
       if (!navigator.geolocation) { toast('المتصفح ما بيدعم تحديد الموقع'); return; }
-      toast('عم نتأكد إنك قريب من الكازية…'); send.disabled = true;
+      toast(bk ? 'عم نتأكد إنك قريب من الفرن…' : 'عم نتأكد إنك قريب من الكازية…'); send.disabled = true;
       navigator.geolocation.getCurrentPosition(function (p) {
         function v(k) { return sel[k] == null ? null : sel[k]; }
-        rpc('report_fuel', { p_station: it.id, p_lat: it.lat, p_lon: it.lon, p_ulat: p.coords.latitude, p_ulon: p.coords.longitude, p_petrol: v('petrol'), p_diesel: v('diesel'), p_gas: v('gas') })
+        (bk ? rpc('report_bread', { p_station: it.id, p_lat: it.lat, p_lon: it.lon, p_ulat: p.coords.latitude, p_ulon: p.coords.longitude, p_avail: v('bread') })
+          : rpc('report_fuel', { p_station: it.id, p_lat: it.lat, p_lon: it.lon, p_ulat: p.coords.latitude, p_ulon: p.coords.longitude, p_petrol: v('petrol'), p_diesel: v('diesel'), p_gas: v('gas') }))
           .then(function () { delete fcache[it.id]; toast('شكراً! انحفظت المعلومة'); if (selected && selected.id === it.id) renderDetail(); })
           .catch(function (e) { send.disabled = false; toast(errMsg(e)); });
-      }, function () { send.disabled = false; toast('فعّل صلاحية الموقع لنتأكد إنك قريب من الكازية'); }, { enableHighAccuracy: true, timeout: 12000 });
+      }, function () { send.disabled = false; toast(bk ? 'فعّل صلاحية الموقع لنتأكد إنك قريب من الفرن' : 'فعّل صلاحية الموقع لنتأكد إنك قريب من الكازية'); }, { enableHighAccuracy: true, timeout: 12000 });
     });
     box.appendChild(send);
-    box.appendChild(h('p', 'meta', 'بس يلي بكون قريب من الكازية (أقل من 1.5 كم) بيقدر يحدّث حالتها.'));
+    box.appendChild(h('p', 'meta', bk ? 'بس يلي بكون قريب من الفرن (أقل من 1.5 كم) بيقدر يحدّث حالته.' : 'بس يلي بكون قريب من الكازية (أقل من 1.5 كم) بيقدر يحدّث حالتها.'));
     return box;
   }
 
@@ -1126,7 +1141,7 @@
     if (it.seed) tags.appendChild(h('span', 'tag warn', 'مثال للتجربة'));
     box.appendChild(tags);
     if (!isR && it.fuel) box.appendChild(h('p', null, (okO ? 'بيبيع (حسب OSM): ' : 'متوفر: ') + it.fuel.replace(/,/g, '،')));
-    if (key === 'fuel' && remote) { var fsb = h('div', 'fstat'); box.appendChild(fsb); fuelLoad([it.id], function () { if (selected && selected.id === it.id) { fsb.textContent = ''; fsb.appendChild(fuelChips(it.id, true)); } }); }
+    if (hasStat(key) && remote) { var fsb = h('div', 'fstat'); box.appendChild(fsb); fuelLoad([it.id], function () { if (selected && selected.id === it.id) { fsb.textContent = ''; fsb.appendChild(fuelChips(it.id, true, key)); } }); }
     var ph = isR ? getPhoto(it) : null;
     if (ph) { var im = h('img'); im.src = ph; im.alt = 'صورة'; box.appendChild(im); }
     else if (isR && it.has_photo) { loadPhoto(it, function () { if (selected && selected.id === it.id) renderDetail(); }); box.appendChild(h('p', 'meta', 'عم نحمّل الصورة…')); }
@@ -1139,7 +1154,8 @@
     if (okO && !it.fallback && !it.cur) { var a = h('a', 'btn', 'افتح على OSM'); a.href = 'https://www.openstreetmap.org/' + it.ot + '/' + it.oid; a.target = '_blank'; a.rel = 'noopener'; row.appendChild(a);
       var er = h('a', 'btn', 'بلّغ عن خطأ بالمعلومات'); er.href = 'https://www.openstreetmap.org/note/new#map=19/' + it.lat + '/' + it.lon; er.target = '_blank'; er.rel = 'noopener'; row.appendChild(er); }
     box.appendChild(row);
-    if (key === 'fuel' && remote) box.appendChild(fuelReportBox(it));
+    if (hasStat(key) && remote) box.appendChild(fuelReportBox(it));
+    if (key === 'exchange') box.appendChild(h('p', 'warnbox', EXW));
     if (!okO) {
       if (isMine(it)) { box.appendChild(h('p', 'meta', 'هاي إضافتك. غيرك بيأكّدها أو بينفيها.')); box.appendChild(ownerRow(t, it)); }
       else {
@@ -1242,7 +1258,7 @@
       b.addEventListener('click', function () { selected = null; renderDetail(); setMode(c[0]); }); box.appendChild(b);
     });
   }
-  function countKind(k) { var n = 0; Object.keys(osm).forEach(function (id) { if (osm[id].kind === k) n++; }); facs.forEach(function (f) { if (f.kind === k && facOk(f)) n++; }); return n; }
+  function countKind(k) { var n = 0; Object.keys(osm).forEach(function (id) { if (osm[id].kind === k && !oldO(osm[id])) n++; }); facs.forEach(function (f) { if (f.kind === k && facOk(f)) n++; }); return n; }
   function renderLayers() {
     var box = $('layList'); box.textContent = '';
     function group(title, obj, withCount) {
@@ -1324,7 +1340,7 @@
   $('locGps').addEventListener('click', tryGps);
   function guessKind(n) {   /* تصنيف تلقائي للمرفق من اسمه */
     n = String(n || '');
-    var R2 = [[/صيدلي/, 'pharmacy'], [/مستشفى|مشفى|مستوصف|عيادة|مركز طبي|مركز صحي/, 'hospital'], [/كازية|محطة وقود|محروقات|بنزين|مازوت|غاز/, 'fuel'], [/مطعم|مقهى|كافي|شاورما|فلافل|مأكولات|حلويات|برغر|بيتزا/, 'restaurant'], [/استراحة|إستراحة/, 'rest'], [/فندق|نزل|بيت ضيافة|شقق|موتيل/, 'hotel'], [/مخفر|شرطة|أمن|مرور/, 'police'], [/إطفاء|اطفاء/, 'fire'], [/إسعاف|اسعاف/, 'ambulance'], [/بلدية/, 'municipality'], [/نفوس|سجل مدني/, 'registry']];
+    var R2 = [[/صيدلي/, 'pharmacy'], [/مخبز|فرن|أفران|افران|معجنات|خبز/, 'bakery'], [/صراف|صرافة|حوالات|تحويل أموال/, 'exchange'], [/مستشفى|مشفى|مستوصف|عيادة|مركز طبي|مركز صحي/, 'hospital'], [/كازية|محطة وقود|محروقات|بنزين|مازوت|غاز/, 'fuel'], [/مطعم|مقهى|كافي|شاورما|فلافل|مأكولات|حلويات|برغر|بيتزا/, 'restaurant'], [/استراحة|إستراحة/, 'rest'], [/فندق|نزل|بيت ضيافة|شقق|موتيل/, 'hotel'], [/مخفر|شرطة|أمن|مرور/, 'police'], [/إطفاء|اطفاء/, 'fire'], [/إسعاف|اسعاف/, 'ambulance'], [/بلدية/, 'municipality'], [/نفوس|سجل مدني/, 'registry']];
     for (var i = 0; i < R2.length; i++) if (R2[i][0].test(n)) return R2[i][1];
     return null;
   }
@@ -1412,7 +1428,7 @@
   function toggleRow(box, title, key) {
     var b = h('button', 'mrow'); b.type = 'button'; b.appendChild(h('b', null, title)); var s = h('small', null, settings[key] ? 'شغّال' : 'مطفي'); b.appendChild(s);
     b.setAttribute('aria-pressed', settings[key] ? 'true' : 'false');
-    b.addEventListener('click', function () { settings[key] = !settings[key]; save(STK, settings); renderAcct(); }); box.appendChild(b);
+    b.addEventListener('click', function () { settings[key] = !settings[key]; save(STK, settings); if (key === 'old') { refreshO(); setOsmStat(); } renderAcct(); renderScreen(cur); }); box.appendChild(b);
   }
   var authMsg = '';
   function renderAcct() {
@@ -1506,7 +1522,7 @@
     }
     box.appendChild(a);
 
-    var s = h('div', 'card menu'); toggleRow(s, 'التنبيه الصوتي', 'voice'); toggleRow(s, 'الاهتزاز عند التنبيه', 'vib'); box.appendChild(s);
+    var s = h('div', 'card menu'); toggleRow(s, 'التنبيه الصوتي', 'voice'); toggleRow(s, 'الاهتزاز عند التنبيه', 'vib'); toggleRow(s, 'إظهار الخدمات القديمة (قبل 2024)', 'old'); box.appendChild(s);
     var inf = h('button', 'btn', 'الدعم والمعلومات'); inf.type = 'button'; inf.addEventListener('click', openInfo); box.appendChild(inf);
   }
   $('bProfile').addEventListener('click', function () { go('acct'); });

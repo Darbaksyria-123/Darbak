@@ -435,3 +435,6 @@ html.trp body { visibility: hidden; }
 .cst { font-weight: 800; border-radius: 20px; padding: 3px 11px; width: fit-content; color: #fff; }
 .cst.g { background: #1b7a4b; } .cst.y { background: #8a5a00; } .cst.r { background: #a31515; }
 p.cst { font-size: 13px; margin: 0; }
+
+/* تنبيه الصرافة */
+.warnbox { background: #3a2a07; border: 1px solid #8a5a00; color: #f0c870; font-size: 12.5px; line-height: 1.6; padding: 8px 10px; border-radius: 10px; margin: 6px 0 0; grid-column: 1 / -1; }
