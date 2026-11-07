@@ -611,7 +611,7 @@
     if (Date.now() - it.sd > 90 * 86400000) src.appendChild(h('span', 'stale', 'الحالة ممكن تكون تغيّرت من هداك التاريخ، تحقق قبل السفر'));
     box.appendChild(src); return box;
   }
-  function addOsm(els) { var n = 0; els.forEach(function (e) { var p = toPoi(e); if (p && !osm[p.id]) { osm[p.id] = p; n++; } }); if (n) addCurated(); return n; }
+  function addOsm(els) { var n = 0; els.forEach(function (e) { var p = toPoi(e); if (p && (!osm[p.id] || osm[p.id].base)) { osm[p.id] = p; n++; } }); if (n) addCurated(); return n; }
 
   var chain = Promise.resolve(), cellState = {}, osmErr = false, countryState = 'idle';
   function setOsmStat() {
@@ -660,6 +660,15 @@
     var nm = (LANG === 'en' && r.a[4]) ? r.a[4] : r.a[2], ty = { c: 'مدينة', t: 'بلدة', v: 'قرية', h: 'قرية' }[r.a[3]] || 'قرية';
     return (r.d <= 2500 ? ty + ' ' + nm : 'بالقرب من ' + nm) + ' · ' + govOf(p);
   }
+  /* لقطة أساسية جاهزة (base.json): بتتحدّث لحالها كل يوم عبر GitHub Actions. بتظهر فوراً، وأي نسخة أحدث من Overpass بتحل مكانها */
+  function loadBase() {
+    return fetch('base.json?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('base'); return r.json(); }).then(function (b) {
+      if (!b || !Array.isArray(b.elements)) return;
+      b.elements.forEach(function (e) { var p = toPoi(e); if (p && !osm[p.id]) { p.base = 1; osm[p.id] = p; } });
+      var tb = b.osm_base && Date.parse(b.osm_base); if (tb && tb > osmBase) { osmBase = tb; stampOsm(); }
+      addCurated(); refreshO(); setOsmStat(); renderScreen(cur);
+    }).catch(function () {});
+  }
   function loadCountry() {
     var c = load('darbak.osm.country.v4', null);
     if (c && c.items && Date.now() - c.ts < 12 * 3600 * 1000) { c.items.forEach(function (p) { if (!p.cur) osm[p.id] = p; }); addCurated(); countryState = 'done'; refreshO(); setOsmStat(); return; }
@@ -667,7 +676,7 @@
     chain = chain.then(function () {
       return getPois(SYR, P_COUNTRY).then(function (j) {
         addOsm(j.elements || []); countryState = 'done'; osmErr = false;
-        save('darbak.osm.country.v4', { ts: Date.now(), items: Object.keys(osm).map(function (k) { return osm[k]; }).filter(function (p) { return !p.cur; }) });
+        save('darbak.osm.country.v4', { ts: Date.now(), items: Object.keys(osm).map(function (k) { return osm[k]; }).filter(function (p) { return !p.cur && !p.base; }) });
         refreshO(); setOsmStat(); renderScreen(cur);
       }).catch(function () {
         countryState = 'idle'; osmErr = true;
@@ -1617,7 +1626,7 @@
   window.addEventListener('online', function () { setOnline(true); });
   window.addEventListener('offline', function () { setOnline(false); });
   drawPins(); go('home', { root: true });
-  addCurated(); refreshO(); plLoad(); loadCountry(); loadWx(); setOsmStat();
+  addCurated(); refreshO(); plLoad(); loadBase(); loadCountry(); loadWx(); setOsmStat();
   setTimeout(function () { $('splash').classList.add('out'); setTimeout(function () { $('splash').remove(); }, 400); }, 1100);
   $('splash').addEventListener('click', function () { this.classList.add('out'); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
