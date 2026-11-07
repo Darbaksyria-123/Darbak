@@ -1,0 +1,92 @@
+name: تحديث الأساس
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: نزّل البيانات من Overpass ونظّفها
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys, time, urllib.parse, urllib.request
+
+          SINCE = '2025-01-01T00:00:00Z'
+          QUERY = ('[out:json][timeout:180];area["ISO3166-1"="SY"]->.a;('
+                   'nwr(area.a)["amenity"~"^(hospital|pharmacy|fuel|restaurant|cafe|fast_food|police)$"](newer:"%s");'
+                   'nwr(area.a)["shop"~"^(bakery)$"](newer:"%s");'
+                   'nwr(area.a)["amenity"~"^(bureau_de_change|money_transfer)$"](newer:"%s");'
+                   'nwr(area.a)["shop"="money_transfer"](newer:"%s");'
+                   'nwr(area.a)["tourism"~"^(hotel|guest_house|motel)$"](newer:"%s");'
+                   ');out center meta;') % ((SINCE,) * 5)
+          ENDPOINTS = ['https://overpass-api.de/api/interpreter',
+                       'https://overpass.kumi.systems/api/interpreter',
+                       'https://overpass.private.coffee/api/interpreter']
+
+          def fetch():
+              src = os.environ.get('SRC_FILE')
+              if src:
+                  return json.load(open(src, encoding='utf-8'))
+              last = None
+              for attempt in range(2):
+                  for u in ENDPOINTS:
+                      try:
+                          req = urllib.request.Request(u, data=urllib.parse.urlencode({'data': QUERY}).encode(),
+                                                       headers={'User-Agent': 'darbak-base-updater/1.0 (github actions)'})
+                          with urllib.request.urlopen(req, timeout=240) as r:
+                              return json.load(r)
+                      except Exception as e:
+                          last = e
+                          print('فشل', u, e, file=sys.stderr)
+                          time.sleep(5)
+              raise SystemExit('كل الخوادم فشلت: %s' % last)
+
+          d = fetch()
+          els = d.get('elements') or []
+          if len(els) < 300:
+              raise SystemExit('عدد العناصر قليل (%d)، ما منحدّث' % len(els))
+
+          KEEP = {'aerodrome', 'aerodrome:type', 'aeroway', 'amenity', 'barrier', 'contact:mobile', 'contact:phone',
+                  'contact:website', 'emergency', 'healthcare:speciality', 'highway', 'iata', 'icao', 'military',
+                  'name', 'name:ar', 'name:en', 'office', 'opening_hours', 'operator', 'phone', 'shop', 'tourism', 'website'}
+          out = []
+          for e in els:
+              t = {k: v for k, v in (e.get('tags') or {}).items() if k in KEEP or k.startswith('fuel:') or k.startswith('addr:')}
+              o = {'type': e['type'], 'id': e['id'], 'timestamp': e.get('timestamp', ''), 'tags': t}
+              if 'lat' in e:
+                  o['lat'] = round(e['lat'], 6); o['lon'] = round(e['lon'], 6)
+              elif 'center' in e:
+                  o['center'] = {'lat': round(e['center']['lat'], 6), 'lon': round(e['center']['lon'], 6)}
+              else:
+                  continue
+              out.append(o)
+          out.sort(key=lambda o: (o['type'], o['id']))
+          base = {'v': 1, 'osm_base': (d.get('osm3s') or {}).get('timestamp_osm_base', ''), 'since': SINCE[:10],
+                  'license': '© مساهمو OpenStreetMap (ODbL)', 'elements': out}
+          open(os.environ.get('OUT_FILE', 'base.json'), 'w', encoding='utf-8').write(json.dumps(base, ensure_ascii=False, separators=(',', ':')))
+          print('تم: %d عنصر' % len(out))
+          PY
+
+      - name: احفظ التغيير
+        run: |
+          if git diff --quiet -- base.json; then echo "ما في تغيير"; exit 0; fi
+          git config user.name "darbak-bot"
+          git config user.email "darbak-bot@users.noreply.github.com"
+          git add base.json
+          git commit -m "تحديث تلقائي لـ base.json"
+          git push
+
+      - name: شغّل بناء الموقع
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || true
