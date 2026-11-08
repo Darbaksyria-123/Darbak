@@ -18,13 +18,13 @@
     var k = v.trim(); if (!k) return v;
     var e = DICT.exact[k]; if (e != null) return v.replace(k, e);
     for (var i = 0; i < RXT.length; i++) if (RXT[i][0].test(k)) return v.replace(k, k.replace(RXT[i][0], RXT[i][1]));
-    var o = v;
+    var o = v.replace(/(\d) كم\/س/g, '$1 km/h').replace(/(\d) مم\)/g, '$1 mm)').replace(/(\d) م\)/g, '$1 m)').replace(/(\d) كم(?![\u0600-\u06FF])/g, '$1 km').replace(/(\d) متر(?![\u0600-\u06FF])/g, '$1 m').replace(/(\d) م(?![\u0600-\u06FF])/g, '$1 m').replace(/(\d) د(?![\u0600-\u06FF])/g, '$1 min');
     for (var j = 0; j < FRAGK.length; j++) { if (o.indexOf(FRAGK[j]) > -1) o = o.split(FRAGK[j]).join(DICT.frag[FRAGK[j]]); if (!AR_RE.test(o)) break; }
     return o;
   }
   var TR_ATTR = ['placeholder', 'aria-label', 'title', 'alt'];
   function trNode(n) {
-    if (n.nodeType === 3) { var v = n.nodeValue, t = trText(v); if (t !== v) n.nodeValue = t; }
+    if (n.nodeType === 3) { if (n.parentNode && n.parentNode.closest && n.parentNode.closest('[data-nt]')) return; var v = n.nodeValue, t = trText(v); if (t !== v) n.nodeValue = t; }
     else if (n.nodeType === 1) { TR_ATTR.forEach(function (a) { var v = n.getAttribute && n.getAttribute(a); if (v && AR_RE.test(v)) { var t = trText(v); if (t !== v) n.setAttribute(a, t); } }); }
   }
   function trTree(root) {
@@ -223,11 +223,29 @@
     return fetch(CFG.url + '/auth/v1/' + path, { method: method, headers: hd, body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.text().then(function (t) { var j = {}; try { j = t ? JSON.parse(t) : {}; } catch (e) {} if (!r.ok) { var er = new Error(j.msg || j.error_description || j.message || j.error_code || 'error'); er.status = r.status; er.code = j.error_code || j.code || ''; throw er; } return j; }); });
   }
+  var refreshP = null;
+  function adoptStored(rt) {
+    /* لو تبويب تاني (أو التطبيق المثبّت) جدّد التوكن قبلنا، منستعمل الجديد بدل ما نطلّع المستخدم */
+    var st = load(SK, null);
+    if (st && st.refresh && st.refresh !== rt && st.uid) { session = st; owner = st.uid; return true; }
+    return false;
+  }
   function refreshSession() {
     if (!session) return Promise.resolve();
-    return authReq('POST', 'token?grant_type=refresh_token', { refresh_token: session.refresh }).then(function (j) {
+    if (refreshP) return refreshP;
+    if (adoptStored(session.refresh) && session.exp - Date.now() > 60000) return Promise.resolve();
+    var rt = session.refresh;
+    refreshP = authReq('POST', 'token?grant_type=refresh_token', { refresh_token: rt }).then(function (j) {
       setTokens({ access_token: j.access_token, refresh_token: j.refresh_token, expires_in: j.expires_in, user: j.user });
-    }).catch(function (e) { if (e && e.status >= 400 && e.status < 500) { clearSession(); renderAll(); toast('انتهت جلستك، سجّل دخول مرة تانية'); } throw e; });
+    }).catch(function (e) {
+      /* بنطلّع المستخدم بس لما السيرفر يرفض التوكن نهائياً (400/401/403). الشبكة والضغط (429/5xx) ما بيطلّعوه */
+      if (e && (e.status === 400 || e.status === 401 || e.status === 403)) {
+        if (adoptStored(rt)) return;
+        clearSession(); renderAll(); toast('انتهت جلستك، سجّل دخول مرة تانية'); e.handled = true;
+      }
+      throw e;
+    }).then(function (r) { refreshP = null; return r; }, function (e) { refreshP = null; throw e; });
+    return refreshP;
   }
   function tokenReady() { return (!session || session.exp - Date.now() > 60000) ? Promise.resolve() : refreshSession(); }
 
@@ -306,7 +324,7 @@
       api('reports?select=id,type,lat,lon,road,note,has_photo,at,yes,no&at=gte.' + since + '&order=at.desc&limit=500'),
       api('facilities?select=id,kind,name,lat,lon,note,fuel,hours,at,yes,no&order=at.desc&limit=1000').catch(function () { return api('facilities?select=id,kind,name,lat,lon,note,fuel,at,yes,no&order=at.desc&limit=1000'); })
     ]).then(function (x) { reports = Array.isArray(x[0]) ? x[0] : []; facs = Array.isArray(x[1]) ? x[1] : []; normFacs(); renderAll(); })
-      .catch(function () { if (online) toast('ما في اتصال بالخادم'); }).then(function () { refreshing = false; });
+      .catch(function (e) { if (online && !(e && e.handled)) toast('ما في اتصال بالخادم'); }).then(function () { refreshing = false; });
   }
   function syncMine() {
     if (!remote || !session) return;
@@ -347,6 +365,11 @@
     item.note = note; renderAll();
     if (!remote) return persist();
     rpc('edit_mine', { p_table: table, p_id: item.id, p_note: note }).catch(function () { toast('ما انحفظ التعديل على الخادم'); refresh(); });
+  }
+  function editName(item, name) {
+    item.name = name; renderAll();
+    if (!remote) return persist();
+    rpc('edit_facility_name', { p_id: item.id, p_name: name }).catch(function () { toast('ما انحفظ تعديل الاسم على الخادم'); refresh(); });
   }
   function getPhoto(it) { return safePhoto(it.photo || photoCache[it.id]); }
   function loadPhoto(it, then) {
@@ -449,15 +472,15 @@
 
   /* ===== الخريطة ===== */
   /* الخريطة محصورة بسوريا: ما بتقدر تسحبها لبرا الحدود ولا تبعّد أكتر من اللازم */
-  var map = L.map('map', { zoomControl: false, preferCanvas: true, minZoom: 6, maxBounds: [[31.9, 35.3], [37.8, 42.9]], maxBoundsViscosity: 1.0 });
+  var map = L.map('map', { zoomControl: false, preferCanvas: true, minZoom: 6, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90, bounceAtZoomLimits: false, inertiaDeceleration: 2600, maxBounds: [[31.9, 35.3], [37.8, 42.9]], maxBoundsViscosity: 1.0 });
   map.fitBounds([[32.3, 35.7], [37.3, 42.4]]);
-  var osmTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
-  var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Esri, Maxar, Earthstar Geographics' });
-  var satLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+  var osmTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, maxNativeZoom: 19, updateWhenIdle: false, updateWhenZooming: false, keepBuffer: 4, attribution: '&copy; OpenStreetMap' });
+  var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 17, updateWhenIdle: false, updateWhenZooming: false, keepBuffer: 4, attribution: 'Esri, Maxar, Earthstar Geographics' });
+  var satLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 17, updateWhenIdle: false, keepBuffer: 2 });
   osmTiles.addTo(map);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   var layerR = L.layerGroup().addTo(map), layerF = L.layerGroup().addTo(map), layerW = L.layerGroup().addTo(map);
-  var layerO = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48, disableClusteringAtZoom: 16, chunkedLoading: true }).addTo(map);
+  var layerO = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48, disableClusteringAtZoom: 16, chunkedLoading: true, animateAddingMarkers: false }).addTo(map);
   var routeLine = null, meMarker = null;
 
   $('bSat').addEventListener('click', function () {
@@ -828,7 +851,7 @@
   function rcard(r) {
     var b = h('button', 'rcard'); b.type = 'button';
     b.appendChild(circ(r.type, R[r.type].c));
-    var t = h('div'); t.appendChild(h('h3', null, R[r.type].n + (r.road ? ' · ' + r.road : ''))); t.appendChild(h('p', 'meta pl', '📍 ' + (r.city || placeLabel(r)))); b.appendChild(t);
+    var t = h('div'); var rh = h('h3', null, r.road ? trText(R[r.type].n) + ' · ' + r.road : R[r.type].n); if (r.road) rh.setAttribute('data-nt', '1'); t.appendChild(rh); t.appendChild(h('p', 'meta pl', '📍 ' + (r.city || placeLabel(r)))); b.appendChild(t);
     var tg = h('div', 'tags'); tg.appendChild(h('span', 'tag', ago(r.at)));
     if (Date.now() - r.at < 3600000) tg.appendChild(h('span', 'tag new', 'جديد')); if (r.yes >= 3) tg.appendChild(h('span', 'tag ok', 'مؤكد')); if (r.seed) tg.appendChild(h('span', 'tag warn', 'مثال'));
     b.appendChild(tg);
@@ -939,7 +962,7 @@
     function tile(g, big) {
       var k0 = g[2][0], b = h('button', big ? 'kbar' : null); b.type = 'button';
       var ic = h('span', 'ki'); ic.style.background = F[k0].c; ic.innerHTML = svg(k0, '#fff', big ? 20 : 22); b.appendChild(ic);
-      b.appendChild(h('span', 'kl', big ? 'النوع: ' + g[1] : g[1]));
+      b.appendChild(h('span', 'kl', big ? (LANG === 'en' ? 'Type: ' : 'النوع: ') + trText(g[1]) : g[1]));
       if (big) b.appendChild(h('span', 'kchg', 'تغيير ▾'));
       b.addEventListener('click', function () { svcKind = big ? null : g[0]; svcFA = ''; renderSvc(); });
       box.appendChild(b);
@@ -949,7 +972,7 @@
     [['all', 'الكل'], ['user', 'أضافها المستخدمون'], ['osm', 'OpenStreetMap']].forEach(function (x) { var b = h('button', null, x[1]); b.type = 'button'; b.setAttribute('aria-pressed', svcSrc === x[0] ? 'true' : 'false'); b.addEventListener('click', function () { svcSrc = x[0]; renderSvc(); }); sb.appendChild(b); });
     var ul = $('svcList'); ul.textContent = '';
     if ((svcKind === 'fuel' || svcKind === 'pharmacy') && remote) {
-      var fr = h('li', 'fseg'), fs = h('div', 'seg'); fs.setAttribute('role', 'group'); fs.setAttribute('aria-label', 'فلتر المحروقات');
+      var fr = h('li', 'fseg'), fs = h('div', 'seg'); fs.setAttribute('role', 'group'); fs.setAttribute('aria-label', svcKind === 'pharmacy' ? 'فلتر المناوبة' : 'فلتر المحروقات');
       (svcKind === 'pharmacy' ? [['', 'الكل'], ['duty', 'مناوبة اليوم']] : [['', 'الكل'], ['petrol', 'بنزين متوفر'], ['diesel', 'مازوت متوفر'], ['gas', 'غاز متوفر']]).forEach(function (x) {
         var b = h('button', null, x[1]); b.type = 'button'; b.setAttribute('aria-pressed', svcFA === x[0] ? 'true' : 'false');
         b.addEventListener('click', function () { svcFA = x[0]; renderSvc(); }); fs.appendChild(b);
@@ -974,7 +997,7 @@
     rows.forEach(function (rw) {
       var f = rw.it, c = h('div', 'rcard');
       c.appendChild(circ(f.kind, F[f.kind].c));
-      var t = h('div'); t.appendChild(h('h3', null, f.name || f.sub || F[f.kind].n)); var tg = h('div', 'tags'); tg.appendChild(h('span', 'tag', f.sub || F[f.kind].n)); if (rw.d != null) tg.appendChild(h('span', 'tag', rw.d < 1000 ? Math.round(rw.d / 10) * 10 + ' م' : (rw.d / 1000).toFixed(1) + ' كم')); tg.appendChild(h('span', 'tag pl', '📍 ' + placeLabel(f))); if (rw.t === 'osm' && f.cur) tg.appendChild(h('span', 'tag cst ' + (CST[f.st] || CST.open)[1], (CST[f.st] || CST.open)[0])); else if (rw.t === 'osm') tg.appendChild(h('span', 'tag osm', 'OSM')); t.appendChild(tg); c.appendChild(t);
+      var t = h('div'); var nh = h('h3', null, f.name || f.sub || F[f.kind].n); if (f.name) nh.setAttribute('data-nt', '1'); t.appendChild(nh); var tg = h('div', 'tags'); tg.appendChild(h('span', 'tag', f.sub || F[f.kind].n)); if (rw.d != null) tg.appendChild(h('span', 'tag', rw.d < 1000 ? Math.round(rw.d / 10) * 10 + ' م' : (rw.d / 1000).toFixed(1) + ' كم')); tg.appendChild(h('span', 'tag pl', '📍 ' + placeLabel(f))); if (rw.t === 'osm' && f.cur) tg.appendChild(h('span', 'tag cst ' + (CST[f.st] || CST.open)[1], (CST[f.st] || CST.open)[0])); else if (rw.t === 'osm') tg.appendChild(h('span', 'tag osm', 'OSM')); t.appendChild(tg); c.appendChild(t);
       if (f.fuel) c.appendChild(h('p', 'more', (rw.t === 'osm' ? 'بيبيع: ' : 'متوفر: ') + f.fuel.replace(/,/g, '،')));
       if (hasStat(f.kind) && remote) { var fsl = h('div', 'fstat more'); c.appendChild(fsl); fslots.push([f.id, fsl, f.kind]); }
       if (f.kind === 'pharmacy' && remote && !f.fallback && !f.cur) { var dsl = h('div', 'fstat more'); c.appendChild(dsl); dslots.push([f.id, dsl]); }
@@ -1038,7 +1061,7 @@
   /* ===== بطاقة التفاصيل على الخريطة ===== */
   function voteRow(table, it) {
     var wrap = h('div', 'row'), mine = votes[it.id], isF = table === 'facilities';
-    var y = h('button', 'btn', (isF ? 'معلومة صحيحة' : 'لسا موجود') + ' (' + it.yes + ')'), n = h('button', 'btn', (isF ? 'غير صحيحة' : 'ما عاد موجود') + ' (' + it.no + ')');
+    var y = h('button', 'btn', trText(isF ? 'معلومة صحيحة' : 'لسا موجود') + ' (' + it.yes + ')'), n = h('button', 'btn', trText(isF ? 'غير صحيحة' : 'ما عاد موجود') + ' (' + it.no + ')');
     y.type = n.type = 'button';
     if (mine) { y.disabled = n.disabled = true; (mine === 'y' ? y : n).classList.add('primary'); }
     y.addEventListener('click', function () { if (!votes[it.id] && canWrite()) { voteItem(table, it, true); toast('شكراً، تأكيدك بيساعد غيرك'); } });
@@ -1049,10 +1072,17 @@
     var wrap = h('div', 'row');
     var ed = h('button', 'btn', 'عدّل التفاصيل'), del = h('button', 'btn danger', 'احذف'); ed.type = del.type = 'button'; var armed = false;
     ed.addEventListener('click', function () {
+      var nameIn = null;
+      if (table === 'facilities') { nameIn = h('input'); nameIn.type = 'text'; nameIn.maxLength = 80; nameIn.value = it.name || ''; nameIn.placeholder = 'اسم المرفق'; nameIn.setAttribute('aria-label', 'اسم المرفق'); }
       var ta = h('textarea'); ta.maxLength = 140; ta.value = it.note || '';
       var ok = h('button', 'btn primary', 'احفظ'); ok.type = 'button';
-      var row = h('div', 'row'); row.appendChild(ok); wrap.replaceWith(ta); ta.after(row);
-      ok.addEventListener('click', function () { editNote(table, it, ta.value.trim().slice(0, 140)); toast('انحفظ التعديل'); });
+      var row = h('div', 'row'); row.appendChild(ok);
+      if (nameIn) { wrap.replaceWith(nameIn); nameIn.after(ta); } else wrap.replaceWith(ta);
+      ta.after(row);
+      ok.addEventListener('click', function () {
+        if (nameIn) { var nm = nameIn.value.trim().slice(0, 80); if (!nm) { toast('الاسم ما بيصير فاضي'); return; } if (nm !== it.name) editName(it, nm); }
+        editNote(table, it, ta.value.trim().slice(0, 140)); toast('انحفظ التعديل');
+      });
     });
     del.addEventListener('click', function () { if (!armed) { armed = true; del.textContent = 'اضغط مرة تانية للحذف'; return; } deleteItem(table, it); toast('انحذف'); });
     wrap.appendChild(ed); wrap.appendChild(del); return wrap;
@@ -1241,7 +1271,7 @@
     var isR = t === 'reports', key = isR ? it.type : it.kind;
     box.textContent = ''; box.hidden = false;
     var x = h('button', 'x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'إغلاق'); x.addEventListener('click', function () { selected = null; renderDetail(); });
-    var title = h('h3'); title.innerHTML = svg(key, 'var(--c-' + key + ')', 26); title.appendChild(document.createTextNode(isR ? R[key].n + (it.road ? ' · ' + it.road : '') : (it.name || F[key].n)));
+    var title = h('h3'); title.innerHTML = svg(key, 'var(--c-' + key + ')', 26); title.appendChild(document.createTextNode(isR ? (it.road ? trText(R[key].n) + ' · ' + it.road : R[key].n) : (it.name || F[key].n))); if (isR ? it.road : it.name) title.setAttribute('data-nt', '1');
     box.appendChild(x); box.appendChild(title);
     var tags = h('div', 'tags');
     if (!isR) tags.appendChild(h('span', 'tag', it.sub || F[key].n));
@@ -1736,6 +1766,22 @@
     $(id).value = gov; $(id).addEventListener('change', function () { setGov(this.value); });
   });
   (function () { var s = $('feedGov'), o = h('option', null, 'كل سوريا'); o.value = ''; s.appendChild(o); GOV.forEach(function (g) { var x = h('option', null, g.n); x.value = g.n; s.appendChild(x); }); s.addEventListener('change', function () { feedGov = this.value; renderFeed(); }); })();
+
+  /* أول ما يفتح المستخدم التطبيق: بنختار المحافظة الأقرب لموقعه تلقائياً (إلا إذا اختار هو محافظة قبلها) */
+  (function () {
+    if (!navigator.geolocation) return;
+    var touched = false;
+    ['homeGov', 'wxGov', 'svcGov', 'barGov'].forEach(function (id) { $(id).addEventListener('change', function () { touched = true; }); });
+    try {
+      navigator.geolocation.getCurrentPosition(function (p) {
+        var ll = { lat: p.coords.latitude, lon: p.coords.longitude };
+        if (!inSyria({ lat: ll.lat, lng: ll.lon })) return;
+        me = ll; try { drawMe(); } catch (e) {}
+        if (touched) return;
+        var g = govOf(ll); if (g !== gov) { setGov(g); toast('اخترنا محافظتك: ' + g); }
+      }, function () {}, { timeout: 8000, maximumAge: 600000 });
+    } catch (e) {}
+  })();
 
   /* زر اللغة بالشريط العلوي + تشغيل المترجم */
   (function () {
