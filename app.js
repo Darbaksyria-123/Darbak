@@ -472,16 +472,16 @@
 
   /* ===== الخريطة ===== */
   /* الخريطة محصورة بسوريا: ما بتقدر تسحبها لبرا الحدود ولا تبعّد أكتر من اللازم */
-  var map = L.map('map', { zoomControl: false, preferCanvas: true, minZoom: 6, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90, bounceAtZoomLimits: false, inertiaDeceleration: 2600, maxBounds: [[31.9, 35.3], [37.8, 42.9]], maxBoundsViscosity: 1.0 });
+  var map = L.map('map', { zoomControl: false, preferCanvas: true, minZoom: 6, maxBounds: [[31.9, 35.3], [37.8, 42.9]], maxBoundsViscosity: 1.0 });
   map.fitBounds([[32.3, 35.7], [37.3, 42.4]]);
 
-  var osmTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, maxNativeZoom: 19, updateWhenIdle: false, updateWhenZooming: false, keepBuffer: 4, attribution: '&copy; OpenStreetMap' });
-  var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 17, updateWhenIdle: false, updateWhenZooming: false, keepBuffer: 4, attribution: 'Esri, Maxar, Earthstar Geographics' });
-  var satLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 17, updateWhenIdle: false, keepBuffer: 2 });
+  var osmTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' });
+  var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 17, attribution: 'Esri, Maxar, Earthstar Geographics' });
+  var satLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, maxNativeZoom: 17 });
   osmTiles.addTo(map);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   var layerR = L.layerGroup().addTo(map), layerF = L.layerGroup().addTo(map), layerW = L.layerGroup().addTo(map);
-  var layerO = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48, disableClusteringAtZoom: 16, chunkedLoading: true, animateAddingMarkers: false }).addTo(map);
+  var layerO = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48, disableClusteringAtZoom: 16, chunkedLoading: true }).addTo(map);
   var routeLine = null, meMarker = null;
 
   $('bSat').addEventListener('click', function () {
@@ -841,7 +841,7 @@
       var d2 = h('div'); d2.appendChild(h('b', null, 'الموقع مطفي')); d2.appendChild(h('small', null, 'فعّله لنعرض طقس مكانك وخدمات قريبة منك')); el.appendChild(d2);
       var c2 = h('button', 'chg', 'فعّل الموقع'); c2.type = 'button'; c2.addEventListener('click', function () { askGeo(true); }); el.appendChild(c2);
     }
-    trTree(el);
+    if (LANG === 'en') trTree(el);
   }
   function renderHome() {
     var hr = new Date().getHours();
