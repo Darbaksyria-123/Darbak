@@ -454,3 +454,13 @@ p.cst { font-size: 13px; margin: 0; }
 .hdays button[aria-pressed=true]{background:#0b6b3f;color:#fff;border-color:#0b6b3f}
 .htimes{display:flex;gap:12px}.htimes label{flex:1;display:grid;gap:4px;font-weight:700}
 .htimes input{padding:9px;border:1px solid #cfd8d2;border-radius:10px;font:inherit}
+
+/* موقع المستخدم + الطقس */
+.locpill{display:flex;align-items:center;gap:10px;background:var(--card,#fff);border:1px solid var(--line,#d5e3db);border-radius:16px;padding:10px 12px}
+.locpill[hidden]{display:none}
+.locpill .dot{width:12px;height:12px;border-radius:50%;background:#2f8cff;box-shadow:0 0 0 5px rgba(47,140,255,.22);flex:none}
+.locpill b{font-size:15px;display:block}
+.locpill small{display:block;font-size:12px;opacity:.75;margin-top:2px}
+.locpill .chg{margin-inline-start:auto;background:none;border:0;font:inherit;font-size:12.5px;font-weight:800;color:var(--green,#0b6b3f);padding:6px 4px;white-space:nowrap}
+.locpill.off{background:#fff6dd;border-color:#e0b25a;color:#5a3d00}
+.locpill.off .chg{background:#1b9a68;color:#fff;border-radius:12px;padding:8px 12px}

@@ -474,6 +474,7 @@
   /* الخريطة محصورة بسوريا: ما بتقدر تسحبها لبرا الحدود ولا تبعّد أكتر من اللازم */
   var map = L.map('map', { zoomControl: false, preferCanvas: true, minZoom: 6, zoomSnap: 0.25, zoomDelta: 0.5, wheelPxPerZoomLevel: 90, bounceAtZoomLimits: false, inertiaDeceleration: 2600, maxBounds: [[31.9, 35.3], [37.8, 42.9]], maxBoundsViscosity: 1.0 });
   map.fitBounds([[32.3, 35.7], [37.3, 42.4]]);
+
   var osmTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, maxNativeZoom: 19, updateWhenIdle: false, updateWhenZooming: false, keepBuffer: 4, attribution: '&copy; OpenStreetMap' });
   var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 17, updateWhenIdle: false, updateWhenZooming: false, keepBuffer: 4, attribution: 'Esri, Maxar, Earthstar Geographics' });
   var satLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, maxNativeZoom: 17, updateWhenIdle: false, keepBuffer: 2 });
@@ -532,14 +533,17 @@
     return next();
   }
   /* حدود سوريا التقريبية (خط,طول). تُستخدم كشبكة أمان: لإضافة المرافق، ولو استعلام حدود OSM ما اشتغل */
-  var SYR_POLY = [[35.93,35.90],[35.96,36.06],[36.08,36.22],[36.22,36.52],[36.55,36.66],[36.70,36.98],[36.75,37.30],[36.76,37.60],[36.85,38.00],[36.95,38.30],[36.80,38.80],[36.72,39.25],[36.82,39.70],[36.86,40.10],[37.00,40.60],[37.12,41.10],[37.15,41.60],[37.25,42.00],[37.27,42.40],[36.82,42.18],[36.60,41.85],[36.33,41.35],[35.85,41.18],[35.30,41.00],[34.75,40.95],[34.40,41.00],[34.00,40.15],[33.70,39.50],[33.37,38.80],[32.32,37.20],[32.31,36.75],[32.40,36.40],[32.54,36.02],[32.65,35.85],[32.70,35.65],[32.75,35.72],[33.05,35.78],[33.25,35.80],[33.43,35.85],[33.65,35.95],[33.85,36.30],[34.00,36.45],[34.20,36.52],[34.35,36.55],[34.55,36.52],[34.62,36.30],[34.62,35.93],[34.90,35.82],[35.30,35.72],[35.62,35.74],[35.85,35.78]];
-  function inPoly(lat, lon) {
-    var ins = false, P = SYR_POLY;
+  var SYR_POLY = [[35.93,35.9],[35.96,36.06],[36.08,36.22],[36.22,36.52],[36.55,36.66],[36.64,36.98],[36.66,37.3],[36.76,37.6],[36.85,38.0],[36.95,38.3],[36.8,38.8],[36.72,39.25],[36.82,39.7],[36.86,40.1],[37.0,40.6],[37.063,41.1],[37.065,41.6],[37.25,42.0],[37.27,42.4],[36.82,42.18],[36.6,41.85],[36.33,41.35],[35.85,41.18],[35.3,41.0],[34.75,40.95],[34.4,41.0],[34.0,40.15],[33.7,39.5],[33.37,38.8],[32.32,37.2],[32.31,36.75],[32.4,36.4],[32.585,36.02],[32.65,35.85],[32.7,35.65],[32.75,35.72],[33.05,35.78],[33.25,35.8],[33.43,35.85],[33.65,35.95],[33.85,36.3],[34.0,36.45],[34.2,36.52],[34.35,36.55],[34.55,36.52],[34.62,36.3],[34.62,35.93],[34.9,35.82],[35.3,35.72],[35.62,35.74],[35.85,35.78]];
+  /* الجولان المحتل (غرب خط وقف إطلاق النار) ما بنعرض فيه مواقع. القنيطرة وجبل الشيخ السوري بيضلوا */
+  var GOLAN_EX = [[32.66, 35.55], [32.66, 35.79], [32.85, 35.80], [33.00, 35.80], [33.12, 35.805], [33.28, 35.82], [33.335, 35.84], [33.335, 35.55]];
+  function inRing(lat, lon, P) {
+    var ins = false;
     for (var i = 0, j = P.length - 1; i < P.length; j = i++) {
       if (((P[i][1] > lon) !== (P[j][1] > lon)) && (lat < (P[j][0] - P[i][0]) * (lon - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0])) ins = !ins;
     }
     return ins;
   }
+  function inPoly(lat, lon) { return inRing(lat, lon, SYR_POLY) && !inRing(lat, lon, GOLAN_EX); }
   function elPt(e) { return [e.lat != null ? e.lat : (e.center && e.center.lat), e.lon != null ? e.lon : (e.center && e.center.lon)]; }
   /* الاستعلام الأساسي بيستخدم حدود سوريا الرسمية من OSM. إذا رجع فاضي على مستوى البلد، بنرجع لمربع + فلتر الحدود */
   var useArea = true;
@@ -600,7 +604,7 @@
   function toPoi(e) {
     var t = e.tags || {}, cl = classify(t); if (!cl) return null; var kind = cl[0];
     var lat = e.lat != null ? e.lat : (e.center && e.center.lat), lon = e.lon != null ? e.lon : (e.center && e.center.lon);
-    if (lat == null || lon == null) return null;
+    if (lat == null || lon == null || !inPoly(lat, lon)) return null;
     var note = (t.iata || t.icao) ? ('رمز ' + (t.iata || t.icao)) : '';
     var em = t.emergency === 'yes' || t['healthcare:speciality'] === 'emergency' ? 1 : 0;
     var ts = e.timestamp ? Date.parse(e.timestamp) : 0;
@@ -695,13 +699,13 @@
     }).catch(function () {});
   }
   function loadCountry() {
-    var c = load('darbak.osm.country.v4', null);
-    if (c && c.items && Date.now() - c.ts < 12 * 3600 * 1000) { c.items.forEach(function (p) { if (!p.cur) osm[p.id] = p; }); addCurated(); countryState = 'done'; refreshO(); setOsmStat(); return; }
+    var c = load('darbak.osm.country.v5', null);
+    if (c && c.items && Date.now() - c.ts < 12 * 3600 * 1000) { c.items.forEach(function (p) { if (!p.cur && inPoly(p.lat, p.lon)) osm[p.id] = p; }); addCurated(); countryState = 'done'; refreshO(); setOsmStat(); return; }
     countryState = 'loading'; setOsmStat();
     chain = chain.then(function () {
       return getPois(SYR, P_COUNTRY).then(function (j) {
         addOsm(j.elements || []); countryState = 'done'; osmErr = false;
-        save('darbak.osm.country.v4', { ts: Date.now(), items: Object.keys(osm).map(function (k) { return osm[k]; }).filter(function (p) { return !p.cur && !p.base; }) });
+        save('darbak.osm.country.v5', { ts: Date.now(), items: Object.keys(osm).map(function (k) { return osm[k]; }).filter(function (p) { return !p.cur && !p.base; }) });
         refreshO(); setOsmStat(); renderScreen(cur);
       }).catch(function () {
         countryState = 'idle'; osmErr = true;
@@ -762,7 +766,12 @@
       '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=visibility&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
     return fetch(u).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
       var arr = Array.isArray(j) ? j : [j];
-      wx = arr.map(function (d, i) {
+      wx = arr.map(function (d, i) { return mkWx(d, GOV[i].n, GOV[i].lat, GOV[i].lon); });
+      drawWx(); renderScreen(cur); updateBell();
+    }).catch(function () { wxFail = true; renderScreen(cur); });
+  }
+  var wxFail = false, wxMe = null, geoState = '';
+  function mkWx(d, gname, glat, glon) {
         var c = d.current || {}, code = c.weather_code, temp = c.temperature_2m, pr = c.precipitation || 0, vv = null;
         if (d.hourly && d.hourly.time && c.time) { var px = c.time.slice(0, 13); for (var k = 0; k < d.hourly.time.length; k++) if (d.hourly.time[k].slice(0, 13) === px) { vv = d.hourly.visibility[k]; break; } }
         var al = [];
@@ -771,13 +780,16 @@
         if ([56, 57, 66, 67, 71, 73, 75, 77, 85, 86].indexOf(code) > -1 || (temp != null && temp <= 1.5 && (pr > 0 || (code >= 51 && code <= 67)))) al.push({ k: 'ice', t: 'خطر جليد' + (temp != null ? ' (حرارة ' + temp + '°)' : '') });
         var days = [];
         if (d.daily && d.daily.time) d.daily.time.forEach(function (t, n) { days.push({ d: t, max: d.daily.temperature_2m_max[n], min: d.daily.temperature_2m_min[n], code: d.daily.weather_code[n] }); });
-        return { gov: GOV[i].n, lat: GOV[i].lat, lon: GOV[i].lon, temp: temp, feels: c.apparent_temperature, hum: c.relative_humidity_2m, code: code, wind: c.wind_speed_10m, vis: vv, al: al, days: days };
-      });
-      drawWx(); renderScreen(cur); updateBell();
-    }).catch(function () { wxFail = true; renderScreen(cur); });
+        return { gov: gname, lat: glat, lon: glon, temp: temp, feels: c.apparent_temperature, hum: c.relative_humidity_2m, code: code, wind: c.wind_speed_10m, vis: vv, al: al, days: days };
   }
-  var wxFail = false;
-  function wxOf(g) { for (var i = 0; i < wx.length; i++) if (wx[i].gov === g) return wx[i]; return null; }
+  var WXQ = '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=visibility&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
+  function loadMyWx(ll) {
+    return fetch('https://api.open-meteo.com/v1/forecast?latitude=' + ll.lat.toFixed(3) + '&longitude=' + ll.lon.toFixed(3) + WXQ).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
+      wxMe = mkWx(Array.isArray(j) ? j[0] : j, govOf(ll), ll.lat, ll.lon); wxMe.me = true; renderScreen(cur); updateBell();
+    }).catch(function () {});
+  }
+  function myPlace() { if (!me) return ''; var r = PL.n ? plNear(me) : null; if (!r || r.d > 2500) return ''; return (LANG === 'en' && r.a[4]) ? r.a[4] : r.a[2]; }
+  function wxOf(g) { if (wxMe && wxMe.gov === g) return wxMe; for (var i = 0; i < wx.length; i++) if (wx[i].gov === g) return wx[i]; return null; }
   function drawWx() {
     layerW.clearLayers(); if (!vis.wx) return;
     wx.forEach(function (w) {
@@ -813,15 +825,34 @@
   }
   function inGov(r) { return govOf(r) === gov; }
   function liveIn(type) { return reports.filter(function (r) { return live(r) && inGov(r) && (!type || r.type === type); }); }
+  function renderLoc() {
+    var el = $('homeLoc'); el.textContent = ''; el.className = 'locpill'; el.hidden = true;
+    if (geoState === 'ok' && me) {
+      var my = govOf(me), pl = myPlace(); el.hidden = false;
+      el.appendChild(h('span', 'dot'));
+      var d = h('div'); d.appendChild(h('b', null, (LANG === 'en' ? 'You are here: ' : 'أنت هون: ') + (pl || my)));
+      d.appendChild(h('small', null, (pl ? my + ' · ' : '') + (LANG === 'en' ? 'your location' : 'موقعك الحالي'))); el.appendChild(d);
+      var c = h('button', 'chg', my !== gov ? 'ارجع لموقعي' : 'غيّر المحافظة ▾'); c.type = 'button';
+      c.addEventListener('click', function () { if (my !== gov) { setGov(my); } else { $('homeGov').focus(); try { $('homeGov').showPicker(); } catch (e) {} } });
+      el.appendChild(c);
+    } else if (geoState === 'denied') {
+      el.hidden = false; el.className = 'locpill off';
+      el.appendChild(h('span', null, '📍'));
+      var d2 = h('div'); d2.appendChild(h('b', null, 'الموقع مطفي')); d2.appendChild(h('small', null, 'فعّله لنعرض طقس مكانك وخدمات قريبة منك')); el.appendChild(d2);
+      var c2 = h('button', 'chg', 'فعّل الموقع'); c2.type = 'button'; c2.addEventListener('click', function () { askGeo(true); }); el.appendChild(c2);
+    }
+    trTree(el);
+  }
   function renderHome() {
     var hr = new Date().getHours();
     $('greet').textContent = (hr < 12 ? 'صباح الخير' : hr < 18 ? 'مساء الخير' : 'مساء النور') + (profile.name ? (LANG === 'en' ? ', ' : ' يا ') + profile.name : '') + '، ' + gov;
+    renderLoc();
     var w = wxOf(gov), box = $('homeWx'); box.textContent = ''; box.setAttribute('data-w', wgroup(w)); box.setAttribute('data-n', (hr < 6 || hr >= 19) ? '1' : '0'); box.appendChild(wxFx(wgroup(w), hr < 6 || hr >= 19));
     if (!w) { box.appendChild(h('span', 'c', wxFail ? 'تعذّر تحميل الطقس' : 'عم نحمّل الطقس…')); box.appendChild(h('span', 's', wxFail ? 'تأكد من النت وجرّب مرة تانية' : '')); }
     else {
       var l = h('div'); l.appendChild(h('div', 't', (w.temp != null ? Math.round(w.temp) : '—') + '°')); l.appendChild(h('div', 'c', wcode(w.code))); box.appendChild(l);
       var r = h('div'); r.innerHTML = wicon(w.code, 64); box.appendChild(r);
-      box.appendChild(h('span', 's', gov + (visTxt(w.vis) ? ' · ' + visTxt(w.vis) : '') + ' · اضغط للتفاصيل'));
+      box.appendChild(h('span', 's', (w.me && myPlace() ? myPlace() + ' · ' : '') + gov + (visTxt(w.vis) ? ' · ' + visTxt(w.vis) : '') + ' · اضغط للتفاصيل'));
       if (w.al.length) { var al = h('div', 'al'); w.al.forEach(function (a) { al.appendChild(h('span', null, a.t)); }); box.appendChild(al); }
     }
     var nr = reports.filter(live).length, ns = Object.keys(osm).length - oldCount() + facs.filter(facOk).length;
@@ -883,6 +914,7 @@
     var st = h('div', 'wxstats');
     [[w.hum != null ? w.hum + '%' : '—', 'الرطوبة'], [w.wind != null ? Math.round(w.wind) + ' كم/س' : '—', 'الرياح'], [w.feels != null ? Math.round(w.feels) + '°' : '—', 'الشعور']].forEach(function (x) { var d = h('div'); d.appendChild(h('b', null, x[0])); d.appendChild(h('span', null, x[1])); st.appendChild(d); });
     big.appendChild(st);
+    big.appendChild(h('p', 'meta', w.me ? (LANG === 'en' ? '📍 Weather at your location' : '📍 طقس موقعك') + (myPlace() ? ': ' + myPlace() : '') : (LANG === 'en' ? 'Governorate centre weather' : 'طقس مركز المحافظة')));
     if (visTxt(w.vis)) big.appendChild(h('p', 'meta', visTxt(w.vis)));
     if (w.al.length) { var tg = h('div', 'tags'); w.al.forEach(function (a) { tg.appendChild(h('span', 'tag warn', a.t)); }); big.appendChild(tg); }
     box.appendChild(big);
@@ -1768,20 +1800,22 @@
   (function () { var s = $('feedGov'), o = h('option', null, 'كل سوريا'); o.value = ''; s.appendChild(o); GOV.forEach(function (g) { var x = h('option', null, g.n); x.value = g.n; s.appendChild(x); }); s.addEventListener('change', function () { feedGov = this.value; renderFeed(); }); })();
 
   /* أول ما يفتح المستخدم التطبيق: بنختار المحافظة الأقرب لموقعه تلقائياً (إلا إذا اختار هو محافظة قبلها) */
-  (function () {
-    if (!navigator.geolocation) return;
-    var touched = false;
-    ['homeGov', 'wxGov', 'svcGov', 'barGov'].forEach(function (id) { $(id).addEventListener('change', function () { touched = true; }); });
+  var govTouched = false;
+  function askGeo(manual) {
+    if (!navigator.geolocation) { geoState = 'denied'; renderScreen(cur); return; }
     try {
       navigator.geolocation.getCurrentPosition(function (p) {
         var ll = { lat: p.coords.latitude, lon: p.coords.longitude };
-        if (!inSyria({ lat: ll.lat, lng: ll.lon })) return;
-        me = ll; try { drawMe(); } catch (e) {}
-        if (touched) return;
-        var g = govOf(ll); if (g !== gov) { setGov(g); toast('اخترنا محافظتك: ' + g); }
-      }, function () {}, { timeout: 8000, maximumAge: 600000 });
+        if (!inSyria({ lat: ll.lat, lng: ll.lon })) { geoState = 'out'; renderScreen(cur); return; }
+        geoState = 'ok'; me = ll; try { drawMe(); } catch (e) {}
+        loadMyWx(ll);
+        var g = govOf(ll);
+        if ((!govTouched || manual) && g !== gov) { setGov(g); toast('اخترنا محافظتك: ' + g); } else renderScreen(cur);
+      }, function () { geoState = 'denied'; renderScreen(cur); if (manual) toast('فعّل صلاحية الموقع من إعدادات المتصفح'); }, { timeout: 8000, maximumAge: 600000 });
     } catch (e) {}
-  })();
+  }
+  ['homeGov', 'wxGov', 'svcGov', 'barGov'].forEach(function (id) { $(id).addEventListener('change', function () { govTouched = true; }); });
+  askGeo(false);
 
   /* زر اللغة بالشريط العلوي + تشغيل المترجم */
   (function () {
