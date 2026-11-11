@@ -5,21 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://tile.openstreetmap.org https://server.arcgisonline.com; connect-src 'self' https://nominatim.openstreetmap.org https://*.supabase.co https://overpass-api.de https://overpass.kumi.systems https://maps.mail.ru https://api.open-meteo.com https://router.project-osrm.org; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#08382a">
-<script src="early.js?v=17"></script>
+<script src="early.js?v=19"></script>
 <meta name="description" content="دربك: بلاغات الطرق والخدمات في سوريا">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="دربك">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>دربك</title>
-<link rel="manifest" href="manifest.webmanifest?v=17">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=17">
-<link rel="apple-touch-icon" href="apple-touch-icon.png?v=17">
+<link rel="manifest" href="manifest.webmanifest?v=19">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=19">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=19">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 <div id="splash" role="status" aria-label="جاري التحميل">
@@ -42,9 +42,8 @@
 
 <main>
   <section class="scr" id="s-home" aria-label="الرئيسية">
-    <div class="card scope"><span class="lbl">اختر نطاق العرض</span><select class="sel flat" id="homeGov" aria-label="المحافظة"></select></div>
+    <div class="card scope"><span class="lbl">اختر نطاق العرض</span><select class="sel flat" id="homeGov" aria-label="المحافظة"></select><div class="locpill" id="homeLoc" hidden></div></div>
     <div class="hi"><p class="lbl" id="greet"></p><h2>كل ما تحتاجه على <b>دربك</b></h2><p>معلومات من مجتمعك المحلي تساعدك توصل بأمان.</p></div>
-    <div class="locpill" id="homeLoc" hidden></div>
     <button class="wxcard" id="homeWx" type="button"></button>
     <button class="card mapstrip" id="homeMapBtn" type="button" aria-label="افتح الخريطة الحية">
       <span class="mm"><svg viewBox="0 0 46 46" aria-hidden="true"><rect width="46" height="46" fill="#d7ebdf"/><path d="M-2 30C12 22 20 36 32 26S44 22 50 24" stroke="#fff" stroke-width="5" fill="none"/><path d="M14 -2C18 14 10 26 20 50" stroke="#fff" stroke-width="4" fill="none"/><circle cx="30" cy="16" r="5" fill="#c62828"/><circle cx="14" cy="34" r="4" fill="#e4500a"/></svg></span>
@@ -100,6 +99,10 @@
     <p class="attrib">بيانات المرافق © مساهمو OpenStreetMap (ODbL). التصنيف حسب أقرب مركز محافظة، وهو تقريبي. بتنحمّل المرافق الكثيرة (صيدليات، كازيات) لما تقرّب على الخريطة.</p>
   </section>
 
+  <section class="scr" id="s-em" aria-label="طوارئ" hidden>
+    <div id="emBody" style="display:grid;gap:10px"></div>
+  </section>
+
   <section class="scr" id="s-more" aria-label="المزيد" hidden>
     <div class="card menu" id="moreMenu"></div>
   </section>
@@ -112,6 +115,8 @@
     <div id="acctBody" style="display:grid;gap:14px"></div>
   </section>
 </main>
+
+<div class="instban" id="instBan" hidden role="dialog" aria-label="تثبيت التطبيق"><div class="r"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></div><div><b>ثبّت دربك على شاشتك</b><small id="instSub">يفتح أسرع ومن غير متصفح</small></div></div><div class="bt"><button class="p" id="instGo" type="button">تثبيت</button><button class="s" id="instNo" type="button">لاحقاً</button></div></div>
 
 <nav id="nav" aria-label="التنقل الرئيسي">
   <button class="tab" data-go="home" type="button"></button>
@@ -163,6 +168,7 @@
   </div>
   <p class="meta" id="fhint"></p>
   <p class="why" id="fwhy" role="status"></p>
+  <div class="dupbox" id="dupBox" hidden></div>
   <button class="btn primary big" id="fsend" type="submit" disabled>أرسل البلاغ</button>
 </form>
 
@@ -186,10 +192,10 @@
 <div class="offline" id="offline" hidden role="alert">ما في نت. دربك بيشتغل بالنت بس، رجّع الاتصال لتكمل.</div>
 
 <noscript><p style="padding:24px;text-align:center">دربك بيحتاج جافاسكربت.</p></noscript>
-<script src="config.js?v=17"></script>
-<script src="lang-en.js?v=17"></script>
+<script src="config.js?v=19"></script>
+<script src="lang-en.js?v=19"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
-<script src="app.js?v=17"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

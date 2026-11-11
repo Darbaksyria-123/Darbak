@@ -331,12 +331,33 @@
     rpc('my_ids').then(function (rows) { (rows || []).forEach(function (r) { mineIds[r.id] = 1; }); renderAll(); }).catch(function () {});
     rpc('my_votes').then(function (rows) { (rows || []).forEach(function (r) { votes[r.item] = r.yes ? 'y' : 'n'; }); renderAll(); }).catch(function () {});
   }
+  /* مقارنة الأسماء لمنع التكرار (نفس منطق SQL: بدون تشكيل/همزات/ال/كلمات عامة) */
+  var GEN = /^(صيدليه|مطعم|مخبز|فرن|كازيه|محطه|مقهي|كافيه|فندق|مشفي|مستشفي|مركز|مكتب|صرافه|شركه|نزل)$/;
+  function nn(s) {
+    return String(s || '').toLowerCase().replace(/[إأآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/[\u064B-\u065F\u0670\u0640]/g, '')
+      .replace(/[^a-z0-9\u0621-\u064A]+/g, ' ').split(' ').filter(Boolean).map(function (w) { return w.replace(/^ال/, ''); }).filter(function (w) { return w && !GEN.test(w); }).join('');
+  }
+  function simName(a, b) {
+    var x = nn(a), y = nn(b); if (!x || !y) return false;
+    return x === y || (x.length >= 3 && y.length >= 3 && (x.indexOf(y) > -1 || y.indexOf(x) > -1));
+  }
+  function nearSimilar(kind, name, lat, lon) {
+    var best = null, X = nn(name);
+    var pool = facs.concat(Object.keys(osm).map(function (k) { return osm[k]; }));
+    pool.forEach(function (p) {
+      if (p.kind !== kind || p.hidden || p.fallback) return;
+      var d = dist(p, { lat: lat, lon: lon }); if (d >= 60) return;
+      var same = X ? simName(name, p.name) : (!nn(p.name) && d < 15);
+      if (same && (!best || d < best.d)) best = { p: p, d: d };
+    });
+    return best;
+  }
   function addItem(table, obj) {
     var arr = table === 'reports' ? reports : facs;
     if (!remote) { markMine(obj.id); arr.push(obj); renderAll(); persist(); return Promise.resolve(); }
     var p = table === 'reports'
       ? rpc('add_report', { p_id: obj.id, p_type: obj.type, p_lat: obj.lat, p_lon: obj.lon, p_road: obj.road || '', p_note: obj.note || '', p_photo: obj.photo || null })
-      : rpc('add_facility', Object.assign({ p_id: obj.id, p_kind: obj.kind, p_name: obj.name, p_lat: obj.lat, p_lon: obj.lon, p_note: obj.note || '', p_fuel: obj.fuel || '' }, obj.hours ? { p_hours: obj.hours } : {}));
+      : rpc('add_facility', Object.assign({ p_id: obj.id, p_kind: obj.kind, p_name: obj.name, p_lat: obj.lat, p_lon: obj.lon, p_note: obj.note || '', p_fuel: obj.fuel || '' }, obj.hours ? { p_hours: obj.hours } : {}, obj.force ? { p_force: true } : {}));
     return p.then(function () {
       if (obj.photo) { photoCache[obj.id] = obj.photo; obj.has_photo = true; delete obj.photo; }
       markMine(obj.id); arr.push(obj); renderAll();
@@ -415,6 +436,8 @@
 
   /* ===== الحالة ===== */
   var gov = 'دمشق';
+  var scope = 'gov';   /* gov = محافظة | me = ضمن 15 كم من موقعي | all = كل سوريا */
+  var SC_ME = '__me__', SC_ALL = '__all__', NEAR_M = 15000;
   var vis = {}; Object.keys(R).concat(Object.keys(F)).concat(['wx']).forEach(function (k) { vis[k] = true; });
   var mode = 'all';
   var selected = null;        // {t:'reports'|'facilities'|'osm', id}
@@ -430,11 +453,11 @@
   }
 
   /* ===== التنقل بين الشاشات ===== */
-  var TITLES = { map: 'الخريطة الحية', wx: 'الطقس', svc: 'الخدمات', more: 'المزيد', mine: 'بلاغاتي', acct: 'حسابي' };
-  var SCRS = ['home', 'map', 'feed', 'wx', 'svc', 'more', 'mine', 'acct'];
-  var NAVOF = { home: 'home', feed: 'home', wx: 'home', map: 'map', svc: 'svc', more: 'more', mine: 'more', acct: 'more' };
+  var TITLES = { map: 'الخريطة الحية', wx: 'الطقس', svc: 'الخدمات', more: 'المزيد', mine: 'بلاغاتي', acct: 'حسابي', em: 'طوارئ' };
+  var SCRS = ['home', 'map', 'feed', 'wx', 'svc', 'more', 'mine', 'acct', 'em'];
+  var NAVOF = { home: 'home', feed: 'home', wx: 'home', map: 'map', svc: 'svc', more: 'more', mine: 'more', acct: 'more', em: 'home' };
   var cur = 'home', stack = [];
-  var feedType = null, feedTab = 'all', feedGov = '';
+  var feedType = null, feedTab = 'all', feedGov = '', feedNear = false;
   function feedTitle() { return feedType === 'accident' ? 'الحوادث' : feedType === 'blocked' ? 'إغلاقات الطرق' : feedType === 'checkpoint' ? 'الازدحام والحواجز' : 'التنبيهات'; }
 
   function go(s, opt) {
@@ -450,11 +473,12 @@
     if (s === 'map') { setTimeout(function () { map.invalidateSize(); renderDetail(); loadCells(); }, 0); }
     else { $('s-' + s).scrollTop = 0; $('detail').hidden = true; }
     renderScreen(s);
+    renderInst();
   }
   function back() { var p = stack.pop() || 'home'; go(p, { back: true }); }
   function renderScreen(s) {
     if (s === 'home') renderHome(); else if (s === 'feed') renderFeed(); else if (s === 'wx') renderWxScreen();
-    else if (s === 'svc') renderSvc(); else if (s === 'more') renderMore(); else if (s === 'mine') renderMine(); else if (s === 'acct') renderAcct();
+    else if (s === 'svc') renderSvc(); else if (s === 'more') renderMore(); else if (s === 'mine') renderMine(); else if (s === 'acct') renderAcct(); else if (s === 'em') renderEm();
   }
   function renderAll() {
     drawPins();
@@ -462,12 +486,26 @@
     if (!typing) renderScreen(cur);   /* ما نعيد رسم نموذج الدخول وانت عم تكتب */
     if (cur === 'map') renderDetail();
   }
-  function setGov(g) {
-    gov = g;
-    ['homeGov', 'wxGov', 'svcGov', 'barGov'].forEach(function (id) { $(id).value = g; });
+  function scopeVal() { return scope === 'me' ? SC_ME : scope === 'all' ? SC_ALL : gov; }
+  function syncScopeSel() {
+    ['homeGov', 'svcGov'].forEach(function (id) { $(id).value = scopeVal(); });
+    ['wxGov', 'barGov'].forEach(function (id) { $(id).value = gov; });
+  }
+  function setGov(g, sc) {
+    gov = g; scope = sc || 'gov';
+    syncScopeSel();
     if (cur === 'map') { var o = govBy(g); map.flyTo([o.lat, o.lon], 12, { duration: .8 }); }
     renderScreen(cur);
   }
+  function setScopeAll() { scope = 'all'; syncScopeSel(); renderScreen(cur); }
+  function chooseMe() {
+    if (me && geoState === 'ok') { setGov(govOf(me), 'me'); return; }
+    toast('عم نحدد موقعك…'); askGeo(true, 'me');
+  }
+  function onScopeChange(v) { if (v === SC_ME) chooseMe(); else if (v === SC_ALL) setScopeAll(); else setGov(v); }
+  function scopeName() { return scope === 'all' ? 'سوريا' : gov; }
+  function scopeIn() { return scope === 'all' ? 'بسوريا' : scope === 'me' && me ? 'قريبة منك (ضمن 15 كم)' : 'بـ' + gov; }
+  function feedScopeSet() { feedGov = (scope === 'gov' || (scope === 'me' && !me)) ? gov : ''; feedNear = scope === 'me' && !!me; }
   function openOnMap(lat, lon, t, id, zoom) { go('map'); map.setView([lat, lon], zoom || 15); selected = { t: t, id: id }; renderDetail(); }
 
   /* ===== الخريطة ===== */
@@ -823,7 +861,12 @@
     if (g !== 'storm' && g !== 'snow' && w.vis != null && w.vis < 1000) g = 'fog';
     return g;
   }
-  function inGov(r) { return govOf(r) === gov; }
+  function inScope(p) {
+    if (scope === 'all') return true;
+    if (scope === 'me' && me) return dist(me, p) <= NEAR_M;
+    return govOf(p) === gov;
+  }
+  function inGov(r) { return inScope(r); }
   function liveIn(type) { return reports.filter(function (r) { return live(r) && inGov(r) && (!type || r.type === type); }); }
   function renderLoc() {
     var el = $('homeLoc'); el.textContent = ''; el.className = 'locpill'; el.hidden = true;
@@ -845,7 +888,7 @@
   }
   function renderHome() {
     var hr = new Date().getHours();
-    $('greet').textContent = (hr < 12 ? 'صباح الخير' : hr < 18 ? 'مساء الخير' : 'مساء النور') + (profile.name ? (LANG === 'en' ? ', ' : ' يا ') + profile.name : '') + '، ' + gov;
+    $('greet').textContent = (hr < 12 ? 'صباح الخير' : hr < 18 ? 'مساء الخير' : 'مساء النور') + (profile.name ? (LANG === 'en' ? ', ' : ' يا ') + profile.name : '') + '، ' + scopeName();
     renderLoc();
     var w = wxOf(gov), box = $('homeWx'); box.textContent = ''; box.setAttribute('data-w', wgroup(w)); box.setAttribute('data-n', (hr < 6 || hr >= 19) ? '1' : '0'); box.appendChild(wxFx(wgroup(w), hr < 6 || hr >= 19));
     if (!w) { box.appendChild(h('span', 'c', wxFail ? 'تعذّر تحميل الطقس' : 'عم نحمّل الطقس…')); box.appendChild(h('span', 's', wxFail ? 'تأكد من النت وجرّب مرة تانية' : '')); }
@@ -861,12 +904,14 @@
     [['accident', 'الحوادث', 'accident', '#c62828'], ['blocked', 'الإغلاقات', 'blocked', '#e65100'], ['checkpoint', 'الازدحام', 'checkpoint', '#2a62b0'], ['wx', 'الطقس', 'wx', '#0b6e99']].forEach(function (x) {
       var b = h('button', 'tile'); b.type = 'button'; b.appendChild(circ(x[2], x[3])); b.appendChild(h('span', null, x[1]));
       b.appendChild(h('small', null, x[0] === 'wx' ? (w ? Math.round(w.temp) + '°' : '—') : liveIn(x[0]).length + ' بلاغ'));
-      b.addEventListener('click', function () { if (x[0] === 'wx') go('wx'); else { feedType = x[0]; feedTab = 'all'; feedGov = gov; go('feed'); } });
+      b.addEventListener('click', function () { if (x[0] === 'wx') go('wx'); else { feedType = x[0]; feedTab = 'all'; feedScopeSet(); go('feed'); } });
       tiles.appendChild(b);
     });
+    var eb = h('button', 'tile em'); eb.type = 'button'; eb.appendChild(circ('ambulance', '#d62f2f')); eb.appendChild(h('span', null, 'طوارئ')); eb.appendChild(h('small', null, '110'));
+    eb.addEventListener('click', function () { go('em'); }); tiles.appendChild(eb);
     var ul = $('homeLatest'); ul.textContent = '';
-    var lt = liveIn().sort(function (a, b) { return b.at - a.at; }).slice(0, 3);
-    if (!lt.length) ul.appendChild(h('li', 'empty', 'ما في بلاغات فعّالة بـ' + gov + ' هلأ. إذا شفت شي على الطريق، اضغط + وبلّغ.'));
+    var lt = liveIn().sort(function (a, b) { return b.at - a.at; }).slice(0, 2);
+    if (!lt.length) ul.appendChild(h('li', 'empty', 'ما في بلاغات فعّالة ' + scopeIn() + ' هلأ. إذا شفت شي على الطريق، اضغط + وبلّغ.'));
     lt.forEach(function (r) { ul.appendChild(rcard(r)); });
     var q = $('homeQuick'); q.textContent = '';
     var QL = { fuel: 'محروقات', hospital: 'مشافي', pharmacy: 'صيدليات', restaurant: 'مطاعم', police: 'شرطة وأمن طرق', rest: 'استراحات', hotel: 'فنادق', airport: 'مطارات' };
@@ -898,7 +943,8 @@
       b.addEventListener('click', function () { feedTab = x[0]; renderFeed(); }); tabs.appendChild(b);
     });
     var ul = $('feedList'); ul.textContent = '';
-    var rs = reports.filter(function (r) { return live(r) && (!feedType || r.type === feedType) && (!feedGov || govOf(r) === feedGov) && (feedTab === 'all' || (feedTab === 'new' ? Date.now() - r.at < 3600000 : r.yes >= 3)); }).sort(function (a, b) { return b.at - a.at; });
+    if (feedNear && me) ul.appendChild(h('li', 'empty', 'عم نعرض البلاغات ضمن 15 كم من موقعك.'));
+    var rs = reports.filter(function (r) { return live(r) && (!feedType || r.type === feedType) && (!feedGov || govOf(r) === feedGov) && (!feedNear || !me || dist(me, r) <= NEAR_M) && (feedTab === 'all' || (feedTab === 'new' ? Date.now() - r.at < 3600000 : r.yes >= 3)); }).sort(function (a, b) { return b.at - a.at; });
     if (!rs.length) { ul.appendChild(h('li', 'empty', 'ما في بلاغات هون هلأ.')); return; }
     rs.forEach(function (r) { ul.appendChild(rcard(r)); });
   }
@@ -987,7 +1033,8 @@
     navigator.geolocation.getCurrentPosition(function (p) { me = { lat: p.coords.latitude, lon: p.coords.longitude }; on(); }, function () { toast('فعّل صلاحية الموقع لترتيب الأقرب'); }, { enableHighAccuracy: true, timeout: 12000 });
   });
   function renderSvc() {
-    $('svcGov').value = gov;
+    $('svcGov').value = scopeVal();
+    var nearOn = (svcNear || scope === 'me') && !!me;
     var box = $('kinds'); box.textContent = '';
     var cur = null; SG.forEach(function (g) { if (g[0] === svcKind) cur = g; });
     box.className = 'kinds' + (cur ? ' col' : '');
@@ -1013,8 +1060,8 @@
     }
     var rows = [], q = ($('svcQ').value || '').trim().toLowerCase();
     function qok(f) { return !q || ((f.name || '') + ' ' + (f.sub || '') + ' ' + F[f.kind].n + ' ' + placeLabel(f)).toLowerCase().indexOf(q) > -1; }
-    if (svcSrc !== 'osm') facs.forEach(function (f) { if (facOk(f) && govOf(f) === gov && (!svcKind || sgHas(f.kind)) && qok(f)) rows.push({ t: 'facilities', it: f, user: 1 }); });
-    if (svcSrc !== 'user') Object.keys(osm).forEach(function (id) { var p = osm[id]; if (!oldO(p) && (!svcKind || sgHas(p.kind)) && govOf(p) === gov && qok(p)) rows.push({ t: 'osm', it: p }); });
+    if (svcSrc !== 'osm') facs.forEach(function (f) { if (facOk(f) && inScope(f) && (!svcKind || sgHas(f.kind)) && qok(f)) rows.push({ t: 'facilities', it: f, user: 1 }); });
+    if (svcSrc !== 'user') Object.keys(osm).forEach(function (id) { var p = osm[id]; if (!oldO(p) && (!svcKind || sgHas(p.kind)) && inScope(p) && qok(p)) rows.push({ t: 'osm', it: p }); });
     $('svcNear').setAttribute('aria-pressed', svcNear && me ? 'true' : 'false');
     if (!rows.length) { ul.appendChild(h('li', 'empty', Object.keys(osm).length ? 'ما في خدمات بهاي المحافظة بالنوع المختار.' + (oldCount() ? ' (فيه ' + oldCount() + ' خدمة قديمة مخفية، بتقدر تظهرها من حسابي.)' : '') : (osmErr ? 'تعذّر تحميل بيانات OpenStreetMap، تأكد من النت.' : 'عم نحمّل البيانات من OpenStreetMap…'))); return; }
     if ((svcKind === 'fuel' || svcKind === 'pharmacy') && remote && svcFA) {
@@ -1022,8 +1069,8 @@
       rows = rows.filter(function (r) { var s = fcache[r.it.id]; return s && s.d[svcFA] && s.d[svcFA].a; });
       if (!rows.length) { ul.appendChild(h('li', 'empty', svcKind === 'pharmacy' ? 'ما في صيدليات مبلَّغ إنها مناوبة اليوم بهاي المحافظة.' : 'ما في كازيات مبلَّغ إنها متوفرة بهاد النوع هلأ.')); return; }
     }
-    if (svcNear && me) rows.forEach(function (rw) { rw.d = dist(me, rw.it); });
-    rows.sort(function (a, b) { return (svcNear && me) ? a.d - b.d : ((b.user || 0) - (a.user || 0) || (a.it.name || '').localeCompare(b.it.name || '', 'ar')); });
+    if (nearOn) rows.forEach(function (rw) { rw.d = dist(me, rw.it); });
+    rows.sort(function (a, b) { return nearOn ? a.d - b.d : ((b.user || 0) - (a.user || 0) || (a.it.name || '').localeCompare(b.it.name || '', 'ar')); });
     var total = rows.length; rows = rows.slice(0, 120);
     var fslots = [], dslots = [];
     rows.forEach(function (rw) {
@@ -1052,8 +1099,52 @@
   var installEv = null;
   function standalone() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
   function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream; }
-  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEv = e; renderMore(); });
-  window.addEventListener('appinstalled', function () { installEv = null; renderMore(); toast('تثبّت دربك'); });
+  var instReady = false;
+  function renderInst() {
+    var el = $('instBan'); if (!el) return;
+    var ios = !installEv && isIOS(), t = load('darbak.inst', 0);
+    var show = instReady && cur === 'home' && !standalone() && (installEv || ios) && !(t && Date.now() - t < 7 * 86400000);
+    if (show) {
+      $('instSub').textContent = ios ? 'اضغط زر المشاركة ⬆️ ثم «إضافة إلى الشاشة الرئيسية»' : 'يفتح أسرع ومن غير متصفح';
+      $('instGo').textContent = ios ? 'فهمت' : 'تثبيت';
+      if (LANG === 'en') trTree(el);
+    }
+    el.hidden = !show;
+  }
+  function instDismiss() { save('darbak.inst', Date.now()); renderInst(); }
+  $('instNo').addEventListener('click', instDismiss);
+  $('instGo').addEventListener('click', function () {
+    if (installEv) { var ev = installEv; ev.prompt(); ev.userChoice.then(function () { installEv = null; renderMore(); instDismiss(); }); }
+    else instDismiss();
+  });
+  setTimeout(function () { instReady = true; renderInst(); }, 3000);
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); installEv = e; renderMore(); renderInst(); });
+  window.addEventListener('appinstalled', function () { installEv = null; renderMore(); renderInst(); toast('تثبّت دربك'); });
+
+  /* ===== شاشة الطوارئ: الـ110 مؤكد (وزارة الصحة/سانا). 112 و113 مصادر غير رسمية. ما منحط رقم غير مؤكد ===== */
+  function renderEm() {
+    var b = $('emBody'); b.textContent = '';
+    var c = h('div', 'emcall'); c.appendChild(h('div', 't', 'الإسعاف · رقم وطني موحّد لكل المحافظات'));
+    var n = h('div', 'n', '110'); n.setAttribute('data-nt', '1'); c.appendChild(n);
+    var a = h('a', 'emdial', '📞 اتصل الآن'); a.href = 'tel:110'; c.appendChild(a); b.appendChild(c);
+    var g = h('div', 'card emlist');
+    function row(ic, col, title, tag, ok, num) {
+      var r = h('a', 'emrow'); r.href = 'tel:' + num;
+      r.appendChild(circ(ic, col));
+      var d = h('div'); d.appendChild(h('b', null, title)); d.appendChild(h('span', 'emtag' + (ok ? ' ok' : ' un'), tag)); r.appendChild(d);
+      var nn = h('span', 'num', num); nn.setAttribute('data-nt', '1'); r.appendChild(nn); g.appendChild(r);
+    }
+    row('police', '#2a62b0', 'الشرطة (النجدة)', 'مصدر غير رسمي', false, '112');
+    row('fire', '#e65100', 'الإطفاء', 'مصدر غير رسمي', false, '113');
+    b.appendChild(g);
+    var g2 = h('div', 'card emlist'); var keep = g; g = g2;
+    row('phone', '#0b6e99', 'حلب — رقم محلي', 'مؤكد', true, '021110');
+    b.appendChild(g2); g = keep;
+    var nt = h('div', 'card emnote'); var bb = h('b', null, 'ملاحظة: '); nt.appendChild(bb);
+    nt.appendChild(document.createTextNode('الـ110 مجاني ومعتمد من وزارة الصحة ويشتغل بكل المحافظات. 112 و113 جايين من مصادر غير رسمية، فتأكد قبل ما تعتمد عليهم. الأرقام المحلية الثانية عم نتحقق منها وما منحط رقم غير مؤكد.'));
+    nt.appendChild(h('p', 'emsrc', 'المصدر: سانا (وزارة الصحة السورية)، مايو 2026')); b.appendChild(nt);
+    if (LANG === 'en') trTree(b);
+  }
   function renderMore() {
     var m = $('moreMenu'); m.textContent = '';
     var mine = reports.filter(isMine).length + facs.filter(isMine).length;
@@ -1068,7 +1159,7 @@
     });
     row('user', 'حسابي', session ? session.email : (profile.name || 'الملف الشخصي'), function () { go('acct'); });
     row('mine', 'بلاغاتي', mine ? mine + '' : '', function () { go('mine'); });
-    row('bell', 'كل التنبيهات النشطة', reports.filter(live).length + '', function () { feedType = null; feedTab = 'all'; feedGov = ''; go('feed'); });
+    row('bell', 'كل التنبيهات النشطة', reports.filter(live).length + '', function () { feedType = null; feedTab = 'all'; feedGov = ''; feedNear = false; go('feed'); });
     row('wx', 'الطقس', '', function () { go('wx'); });
     row('drive', 'وضع القيادة', watchId == null ? 'متوقّف' : 'شغّال', function () { if (watchId == null) startDrive(); else stopDrive(); renderMore(); }, watchId != null);
     row(LANG === 'en' ? FLAG_EN : FLAG_SY, 'اللغة', LANG === 'en' ? 'English ⇄ العربية' : 'العربية · English', function () { setLang(LANG === 'en' ? 'ar' : 'en'); });
@@ -1463,7 +1554,20 @@
     chosen = null; photoData = null; addLoc = null;
     $('fnote').value = ''; $('fname').value = ''; $('fphoto').value = ''; $('fprev').hidden = true; $('fpickLbl').textContent = 'إرفاق صورة (اختياري)';
     document.querySelectorAll('input[name="fuel"]').forEach(function (c) { c.checked = false; });
-    resetHours();
+    resetHours(); dupForce = false; $('dupBox').hidden = true;
+  }
+  var dupForce = false;
+  function showDup(dp) {
+    var b = $('dupBox'); b.textContent = ''; b.hidden = false;
+    var nm = dp ? (dp.p.name || F[dp.p.kind].n) : '';
+    var dpp = h('p', null, LANG === 'en' ? (dp ? 'A place with the same name is nearby: "' + nm + '" (' + Math.round(dp.d) + ' m away). Is it the same one?' : 'A place with the same name is nearby. Is it the same one?') : (dp ? 'في مكان بنفس الاسم قريب منك: «' + nm + '» (على بعد ' + Math.round(dp.d) + ' م). هو نفسه؟' : 'في مكان بنفس الاسم قريب منك. هو نفسه؟')); dpp.setAttribute('data-nt', '1'); b.appendChild(dpp);
+    var r = h('div', 'row');
+    var same = h('button', 'btn', 'هو نفسه، ما بضيف'); same.type = 'button';
+    same.addEventListener('click', function () { b.hidden = true; if (dp) { hideSheets(); resetForm(); var t = dp.p.id && facs.indexOf(dp.p) > -1 ? 'facilities' : 'osm'; openOnMap(dp.p.lat, dp.p.lon, t, dp.p.id, 17); } else { toast('ما انضاف، ابحث عنه بالقرب منك'); } });
+    var other = h('button', 'btn primary', 'لا، هو مكان تاني، ضيفه'); other.type = 'button';
+    other.addEventListener('click', function () { dupForce = true; b.hidden = true; $('fsend').click(); });
+    r.appendChild(same); r.appendChild(other); b.appendChild(r);
+    b.scrollIntoView({ block: 'nearest' });
   }
   var hDays = [true, true, true, true, true, true, true];
   function buildHDays() {
@@ -1615,8 +1719,10 @@
     } else {
       if (!nm) { toast('اكتب اسم المرفق'); $('fname').focus(); return; }
       var fuel = [].slice.call(document.querySelectorAll('input[name="fuel"]:checked')).map(function (c) { return c.value; }).join(',');
+      if (!dupForce) { var dp = nearSimilar(chosen, nm, addLoc.lat, addLoc.lng); if (dp) { showDup(dp); return; } }
+      var forced = dupForce; dupForce = false; $('dupBox').hidden = true;
       var hrs = getHours(); if (hrs === null) { toast('أوقات الدوام ناقصة: اختار يوم واحد على الأقل ووقتين مختلفين'); return; }
-      var f = { id: uuid(), kind: chosen, hours: hrs, name: nm, lat: Math.round(addLoc.lat * 100000) / 100000, lon: Math.round(addLoc.lng * 100000) / 100000, note: note, fuel: chosen === 'fuel' ? fuel : '', at: Date.now(), yes: 1, no: 0, owner: owner };
+      var f = { id: uuid(), kind: chosen, hours: hrs, name: nm, force: forced, lat: Math.round(addLoc.lat * 100000) / 100000, lon: Math.round(addLoc.lng * 100000) / 100000, note: note, fuel: chosen === 'fuel' ? fuel : '', at: Date.now(), yes: 1, no: 0, owner: owner };
       var wantDuty = chosen === 'pharmacy' && $('fduty').checked && remote;
       table = 'facilities'; p = addItem(table, f).then(function () { if (wantDuty) sendDuty(f); }); sel = { t: table, id: f.id, lat: f.lat, lon: f.lon };
     }
@@ -1624,7 +1730,7 @@
     p.then(function () {
       vis[chosen] = true; hideSheets(); resetForm(); refreshO(); toast('انضاف وصار ظاهر للجميع' + (remote ? '' : ' (محلياً على جهازك)'));
       openOnMap(sel.lat, sel.lon, sel.t, sel.id, 16);
-    }).catch(function (er) { toast(errMsg(er)); }).then(function () { sending = false; updateSend(); });
+    }).catch(function (er) { if (table === 'facilities' && /duplicate/.test(String(er && (er.message || er)))) showDup(null); else toast(errMsg(er)); }).then(function () { sending = false; updateSend(); });
   });
 
   /* ===== حسابي: ملف شخصي + تسجيل دخول (Supabase Auth) + إعدادات ===== */
@@ -1788,30 +1894,35 @@
     b.addEventListener('click', function () { go(k, { root: true }); });
   });
   $('bBack').addEventListener('click', back);
-  $('bBell').addEventListener('click', function () { feedType = null; feedTab = 'all'; feedGov = ''; go('feed'); });
+  $('bBell').addEventListener('click', function () { feedType = null; feedTab = 'all'; feedGov = ''; feedNear = false; go('feed'); });
   $('homeWx').addEventListener('click', function () { go('wx'); });
   $('homeMapBtn').addEventListener('click', function () { go('map'); });
-  $('homeAll').addEventListener('click', function () { feedType = null; feedTab = 'all'; feedGov = gov; go('feed'); });
+  $('homeAll').addEventListener('click', function () { feedType = null; feedTab = 'all'; feedScopeSet(); go('feed'); });
   $('homeSvc').addEventListener('click', function () { svcKind = null; go('svc'); });
   ['homeGov', 'wxGov', 'svcGov', 'barGov'].forEach(function (id) {
+    if (id === 'homeGov' || id === 'svcGov') {
+      var om = h('option', null, '📍 موقعي الحالي'); om.value = SC_ME; $(id).appendChild(om);
+      var oa = h('option', null, '🇸🇾 كل سوريا'); oa.value = SC_ALL; $(id).appendChild(oa);
+    }
     GOV.forEach(function (g) { var o = h('option', null, g.n); o.value = g.n; $(id).appendChild(o); });
-    $(id).value = gov; $(id).addEventListener('change', function () { setGov(this.value); });
+    $(id).value = gov; $(id).addEventListener('change', function () { onScopeChange(this.value); });
   });
-  (function () { var s = $('feedGov'), o = h('option', null, 'كل سوريا'); o.value = ''; s.appendChild(o); GOV.forEach(function (g) { var x = h('option', null, g.n); x.value = g.n; s.appendChild(x); }); s.addEventListener('change', function () { feedGov = this.value; renderFeed(); }); })();
+  (function () { var s = $('feedGov'), o = h('option', null, 'كل سوريا'); o.value = ''; s.appendChild(o); GOV.forEach(function (g) { var x = h('option', null, g.n); x.value = g.n; s.appendChild(x); }); s.addEventListener('change', function () { feedGov = this.value; feedNear = false; renderFeed(); }); })();
 
   /* أول ما يفتح المستخدم التطبيق: بنختار المحافظة الأقرب لموقعه تلقائياً (إلا إذا اختار هو محافظة قبلها) */
   var govTouched = false;
-  function askGeo(manual) {
-    if (!navigator.geolocation) { geoState = 'denied'; renderScreen(cur); return; }
+  function askGeo(manual, sc) {
+    if (!navigator.geolocation) { geoState = 'denied'; syncScopeSel(); renderScreen(cur); if (manual) toast('المتصفح ما بيدعم تحديد الموقع'); return; }
     try {
       navigator.geolocation.getCurrentPosition(function (p) {
         var ll = { lat: p.coords.latitude, lon: p.coords.longitude };
-        if (!inSyria({ lat: ll.lat, lng: ll.lon })) { geoState = 'out'; renderScreen(cur); return; }
+        if (!inSyria({ lat: ll.lat, lng: ll.lon })) { geoState = 'out'; syncScopeSel(); renderScreen(cur); if (manual) toast('موقعك خارج سوريا'); return; }
         geoState = 'ok'; me = ll; try { drawMe(); } catch (e) {}
         loadMyWx(ll);
         var g = govOf(ll);
-        if ((!govTouched || manual) && g !== gov) { setGov(g); toast('اخترنا محافظتك: ' + g); } else renderScreen(cur);
-      }, function () { geoState = 'denied'; renderScreen(cur); if (manual) toast('فعّل صلاحية الموقع من إعدادات المتصفح'); }, { timeout: 8000, maximumAge: 600000 });
+        if (manual && sc === 'me') setGov(g, 'me');
+        else if ((!govTouched || manual) && g !== gov) { setGov(g); toast('اخترنا محافظتك: ' + g); } else renderScreen(cur);
+      }, function () { geoState = 'denied'; syncScopeSel(); renderScreen(cur); if (manual) toast('فعّل صلاحية الموقع من إعدادات المتصفح'); }, { timeout: 8000, maximumAge: 600000 });
     } catch (e) {}
   }
   ['homeGov', 'wxGov', 'svcGov', 'barGov'].forEach(function (id) { $(id).addEventListener('change', function () { govTouched = true; }); });
