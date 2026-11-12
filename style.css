@@ -503,8 +503,7 @@ body{font-size:14px;line-height:1.5}
 .wxcard{border-radius:18px!important;padding:11px 16px!important}.wxcard .t{font-size:36px!important}.wxcard .c{font-size:15px!important}.wxcard svg{width:50px!important;height:50px!important}.wxcard .s{font-size:12px!important}
 .fx .cloud{opacity:.4!important}
 .mapstrip{border-radius:16px!important;padding:8px 12px!important}.mapstrip .mm{width:38px!important;height:38px!important;border-radius:11px!important}.mapstrip b{font-size:14.5px!important}.mapstrip small{font-size:11.5px!important}.mapstrip .go{width:32px!important;height:32px!important;border-radius:11px!important}
-.tile{border-radius:16px!important;padding:9px 2px 8px!important;font-size:12px!important;font-weight:700!important}.tile .ci{width:34px!important;height:34px!important}.tile .ci svg{width:19px!important;height:19px!important}.tile small{font-size:11px!important}
-.tiles.five{gap:6px!important}
+.tile{border-radius:16px!important;padding:11px 2px 10px!important;font-size:12.5px!important;font-weight:700!important}.tile .ci{width:34px!important;height:34px!important}.tile .ci svg{width:19px!important;height:19px!important}.tile small{font-size:11px!important}
 .sec h2{font-size:15px!important;font-weight:700!important}.link{font-size:12.5px!important}
 .rcard{border-radius:14px!important;padding:9px 12px!important}.rcard .ci{width:36px!important;height:36px!important}.rcard h3{font-size:14px!important}
 .qchip{border-radius:14px!important;font-size:11.5px!important;font-weight:700!important;padding:9px 2px 8px!important;gap:6px!important}.qchip svg{width:20px!important;height:20px!important;padding:7px!important;border-radius:11px!important}
@@ -512,7 +511,7 @@ body{font-size:14px;line-height:1.5}
 #bAdd,.addb{border-radius:17px!important}
 
 [data-w="clear"] .fx .cloud,[data-w="cloud"] .fx .cloud{opacity:.4!important}
-.tiles{grid-template-columns:repeat(5,1fr)!important;gap:6px!important}
+.tiles{grid-template-columns:repeat(4,1fr)!important;gap:8px!important}
 .tile span:not(.ci){max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tile.em{background:linear-gradient(160deg,#ffe3e0,#f7b9b3)!important;border-color:#f0a6a0!important}
 .tile.em .ci{background:linear-gradient(145deg,#ef4444,#b91c1c)!important;filter:brightness(.82)}
@@ -520,6 +519,7 @@ body{font-size:14px;line-height:1.5}
 .quick{display:flex!important;overflow-x:auto!important;overflow-y:hidden;gap:8px!important;padding:2px 2px 8px!important;scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
 .quick::-webkit-scrollbar{display:none}
 .quick .qchip{flex:none!important;width:78px}
+.quick{align-items:flex-start!important;min-height:90px;min-height:min-content}
 .emcall{background:linear-gradient(145deg,#d62f2f,#9e1313);color:#fff;border-radius:18px;padding:14px 16px;box-shadow:0 10px 22px rgba(158,19,19,.35);display:grid;gap:4px}
 .emcall .t{font-size:13px;font-weight:600}.emcall .n{font-size:46px;font-weight:700;line-height:1.1;letter-spacing:1px;direction:ltr;text-align:start}
 .emdial{display:block;margin-top:6px;background:#fff;color:#a31515;border-radius:13px;padding:11px;text-align:center;font-weight:700;font-size:15px;text-decoration:none}
@@ -541,3 +541,10 @@ body{font-size:14px;line-height:1.5}
 .instban .p{background:#0a5a40;color:#fff}.instban .s{background:#eef3ef;color:#3d5a49}
 html,body{overflow-x:hidden;touch-action:pan-y}
 .scr{overscroll-behavior:contain}
+
+.ib.lang{width:auto!important;padding:0 10px!important;gap:5px!important;border-radius:18px!important}
+.ib.lang svg{width:26px!important;height:17px!important;border-radius:3px!important}
+.ib.lang span{font-size:12px;font-weight:700}
+
+/* v21: تبويب تحديثات الخدمات */
+.tabs3 button{position:relative}.ubadge{font-style:normal;display:inline-block;min-width:17px;height:17px;line-height:17px;border-radius:9px;background:#d62f2f;color:#fff;font-size:10.5px;margin-inline-start:4px;padding:0 4px}

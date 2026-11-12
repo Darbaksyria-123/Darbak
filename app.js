@@ -91,8 +91,9 @@
     ice:        { n: 'تشكّل جليد',    say: 'تشكّل جليد',    ttl: 720,   c: '#0277bd', alert: 1 },
     rain:       { n: 'أمطار غزيرة',   say: 'أمطار غزيرة',   ttl: 360,   c: '#37474f', alert: 1 },
     fog:        { n: 'ضباب كثيف',     say: 'ضباب كثيف',     ttl: 360,   c: '#546e7a', alert: 1 },
-    checkpoint: { n: 'حاجز / ازدحام', say: 'حاجز',          ttl: 360,   c: '#2a62b0' },
-    radar:      { n: 'دورية رادار',   say: 'دورية رادار',   ttl: 120,   c: '#6a32a8' },
+    checkpoint: { n: 'حاجز / دورية رادار', say: 'حاجز',      ttl: 360,   c: '#2a62b0' },
+    traffic:    { n: 'ازدحام',        say: 'ازدحام',        ttl: 120,   c: '#c2410c' },
+    radar:      { n: 'حاجز / دورية رادار', say: 'دورية رادار', ttl: 120, c: '#6a32a8' },
     pothole:    { n: 'حفرة',          say: 'حفرة',          ttl: 10080, c: '#a8730f' }
   };
   var F = {   /* مرافق. add=1 يقدر المستخدم يضيفها. الباقي من OSM فقط. الألوان غامقة وواضحة */
@@ -105,8 +106,8 @@
     exchange:     { n: 'مكتب صرافة',      c: '#0e7490', add: 1 },
     hotel:        { n: 'فندق / مكان إقامة', c: '#6d28d9', add: 1 },
     police:       { n: 'مخفر شرطة / أمن طرق', c: '#1740b8', add: 1 },
-    ambulance:    { n: 'إسعاف',           c: '#c2185b', add: 1 },
-    fire:         { n: 'إطفاء',           c: '#c93c00', add: 1 },
+    ambulance:    { n: 'إسعاف / إطفاء',   c: '#c2185b', add: 1 },
+    fire:         { n: 'إطفاء',           c: '#c93c00' },
     municipality: { n: 'بلدية',           c: '#2f5d3a', add: 1 },
     registry:     { n: 'دائرة نفوس',      c: '#4a3ab8', add: 1 },
     airport:      { n: 'مطار',            c: '#0a58a8', add: 1 },
@@ -303,8 +304,8 @@
       s(2, 'accident', 'دمشق', -0.025, 0.020, 'أوتوستراد المزة', 'حادث بسيط، السير بطيء', 45, 4),
       s(3, 'blocked', 'دمشق', -0.012, -0.014, 'جسر الرئيس', 'أعمال صيانة والطريق مقطوع', 30, 3),
       s(4, 'blocked', 'حماة', 0.010, 0.020, 'طريق السلمية', 'الطريق مقطوع، استخدموا الطريق البديل', 90, 3),
-      s(5, 'checkpoint', 'دمشق', 0.012, 0.010, 'شارع الثورة', 'ازدحام كثيف عند الحاجز', 20, 6),
-      s(6, 'checkpoint', 'دمشق', -0.020, 0.030, 'أوتوستراد المزة', 'ازدحام متوسط', 40, 2),
+      s(5, 'traffic', 'دمشق', 0.012, 0.010, 'شارع الثورة', 'ازدحام كثيف عند الحاجز', 20, 6),
+      s(6, 'traffic', 'دمشق', -0.020, 0.030, 'أوتوستراد المزة', 'ازدحام متوسط', 40, 2),
       s(7, 'fog', 'دمشق', 0.060, 0.050, 'طريق دمشق حمص', 'ضباب كثيف والرؤية أقل من 50 متر', 30, 5),
       s(8, 'rain', 'اللاذقية', 0.010, -0.010, 'الطريق الساحلي', 'أمطار غزيرة وتجمّع مياه', 45, 4),
       s(9, 'ice', 'السويداء', 0.020, 0.030, 'طريق السويداء درعا', 'جليد على المنعطفات', 120, 3),
@@ -458,7 +459,7 @@
   var NAVOF = { home: 'home', feed: 'home', wx: 'home', map: 'map', svc: 'svc', more: 'more', mine: 'more', acct: 'more', em: 'home' };
   var cur = 'home', stack = [];
   var feedType = null, feedTab = 'all', feedGov = '', feedNear = false;
-  function feedTitle() { return feedType === 'accident' ? 'الحوادث' : feedType === 'blocked' ? 'إغلاقات الطرق' : feedType === 'checkpoint' ? 'الازدحام والحواجز' : 'التنبيهات'; }
+  function feedTitle() { return feedType === 'accident' ? 'الحوادث' : feedType === 'blocked' ? 'إغلاقات الطرق' : feedType === 'traffic' ? 'الازدحام' : feedType === 'checkpoint' ? 'الحواجز والرادار' : 'التنبيهات'; }
 
   function go(s, opt) {
     opt = opt || {};
@@ -901,10 +902,10 @@
     var nr = reports.filter(live).length, ns = Object.keys(osm).length - oldCount() + facs.filter(facOk).length;
     $('homeCounts').textContent = nr + ' بلاغ نشط · تتحدّث كل 15 ث';
     var tiles = $('tiles'); tiles.textContent = '';
-    [['accident', 'الحوادث', 'accident', '#c62828'], ['blocked', 'الإغلاقات', 'blocked', '#e65100'], ['checkpoint', 'الازدحام', 'checkpoint', '#2a62b0'], ['wx', 'الطقس', 'wx', '#0b6e99']].forEach(function (x) {
+    [['accident', 'الحوادث', 'accident', '#c62828'], ['blocked', 'الإغلاقات', 'blocked', '#e65100'], ['traffic', 'الازدحام', 'traffic', '#c2410c']].forEach(function (x) {
       var b = h('button', 'tile'); b.type = 'button'; b.appendChild(circ(x[2], x[3])); b.appendChild(h('span', null, x[1]));
-      b.appendChild(h('small', null, x[0] === 'wx' ? (w ? Math.round(w.temp) + '°' : '—') : liveIn(x[0]).length + ' بلاغ'));
-      b.addEventListener('click', function () { if (x[0] === 'wx') go('wx'); else { feedType = x[0]; feedTab = 'all'; feedScopeSet(); go('feed'); } });
+      b.appendChild(h('small', null, liveIn(x[0]).length + ' بلاغ'));
+      b.addEventListener('click', function () { feedType = x[0]; feedTab = 'all'; feedScopeSet(); go('feed'); });
       tiles.appendChild(b);
     });
     var eb = h('button', 'tile em'); eb.type = 'button'; eb.appendChild(circ('ambulance', '#d62f2f')); eb.appendChild(h('span', null, 'طوارئ')); eb.appendChild(h('small', null, '110'));
@@ -921,7 +922,33 @@
     });
     updateBell();
   }
-  function updateBell() { $('bellDot').hidden = !reports.some(function (r) { return live(r) && R[r.type].alert; }); }
+  /* ===== تحديثات الخدمات: changes.json بيولّده الأكشن كل يوم (جديد / تعدّل / انحذف) ===== */
+  var chg = [], UPD_KEY = 'dk_upd_seen', UPD_TAG = { add: ['جديدة', 'new'], mod: ['تعدّلت', 'warn'], del: ['انحذفت', 'warn'] };
+  function updSeen() { try { return +localStorage.getItem(UPD_KEY) || 0; } catch (e) { return 0; } }
+  function updMark() { var m = 0; chg.forEach(function (x) { if (x.at > m) m = x.at; }); try { if (m) localStorage.setItem(UPD_KEY, String(m)); } catch (e) {} }
+  function updUnread() { var s = updSeen(); return chg.filter(function (x) { return x.at > s && inScope(x); }).length; }
+  function loadChg() {
+    return fetch('changes.json?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('chg'); return r.json(); }).then(function (d) {
+      var out = [];
+      ((d && d.items) || []).forEach(function (x) {
+        if (!x || !x.tags || x.lat == null || x.lon == null || !UPD_TAG[x.c]) return;
+        var p = toPoi({ type: x.t, id: x.i, tags: x.tags, lat: x.lat, lon: x.lon, timestamp: '' });
+        if (!p || !F[p.kind]) return;
+        p.c = x.c; p.at = Date.parse(x.at) || 0; if (p.at) out.push(p);
+      });
+      out.sort(function (a, b) { return b.at - a.at; }); chg = out; updateBell();
+      if (cur === 'feed') renderFeed();
+    }).catch(function () {});
+  }
+  function updCard(p) {
+    var b = h('button', 'rcard'); b.type = 'button'; b.appendChild(circ(p.kind, F[p.kind].c));
+    var t = h('div'), nm = h('h3', null, p.name || p.sub); if (p.name) nm.setAttribute('data-nt', '1'); t.appendChild(nm);
+    t.appendChild(h('p', 'meta pl', p.sub + ' · 📍 ' + placeLabel(p))); b.appendChild(t);
+    var tg = h('div', 'tags'), g = UPD_TAG[p.c]; tg.appendChild(h('span', 'tag ' + g[1], g[0])); tg.appendChild(h('span', 'tag', ago(p.at))); b.appendChild(tg);
+    b.addEventListener('click', function () { if (p.c === 'del') { toast('هاد المكان انحذف من الخريطة'); return; } var q = osm[p.id] || p; openOnMap(q.lat, q.lon, 'osm', p.id, 16); });
+    var li = h('li'); li.appendChild(b); return li;
+  }
+  function updateBell() { $('bellDot').hidden = !(reports.some(function (r) { return live(r) && R[r.type].alert; }) || updUnread() > 0); }
 
   /* ===== بطاقة بلاغ + شاشة البلاغات ===== */
   function rcard(r) {
@@ -938,11 +965,20 @@
   function renderFeed() {
     var sel = $('feedGov'); sel.value = feedGov;
     var tabs = $('feedTabs'); tabs.textContent = '';
-    [['all', 'الكل'], ['new', 'جديدة'], ['ok', 'مؤكدة']].forEach(function (x) {
-      var b = h('button', null, x[1]); b.type = 'button'; b.setAttribute('aria-pressed', feedTab === x[0] ? 'true' : 'false');
+    var TB = [['all', 'الكل'], ['new', 'جديدة'], ['ok', 'مؤكدة']]; if (!feedType) TB.push(['upd', 'الخدمات']); else if (feedTab === 'upd') feedTab = 'all';
+    tabs.style.gridTemplateColumns = 'repeat(' + TB.length + ',1fr)';
+    TB.forEach(function (x) {
+      var b = h('button', null, x[1]); if (x[0] === 'upd' && updUnread()) { var bd = h('i', 'ubadge', updUnread() + ''); b.appendChild(bd); } b.type = 'button'; b.setAttribute('aria-pressed', feedTab === x[0] ? 'true' : 'false');
       b.addEventListener('click', function () { feedTab = x[0]; renderFeed(); }); tabs.appendChild(b);
     });
     var ul = $('feedList'); ul.textContent = '';
+    if (feedTab === 'upd') {
+      var us = chg.filter(function (p) { return (!feedGov || govOf(p) === feedGov) && (!feedNear || !me || dist(me, p) <= NEAR_M); });
+      ul.appendChild(h('li', 'empty', 'تحديثات الخدمات (جديدة، متعدّلة، محذوفة) بتتجمّع كل يوم من خريطة OpenStreetMap.'));
+      if (!us.length) ul.appendChild(h('li', 'empty', 'ما في تحديثات بآخر 14 يوم ' + (feedGov ? 'بـ' + feedGov : 'بسوريا') + '.'));
+      us.slice(0, 80).forEach(function (p) { ul.appendChild(updCard(p)); });
+      updMark(); updateBell(); return;
+    }
     if (feedNear && me) ul.appendChild(h('li', 'empty', 'عم نعرض البلاغات ضمن 15 كم من موقعك.'));
     var rs = reports.filter(function (r) { return live(r) && (!feedType || r.type === feedType) && (!feedGov || govOf(r) === feedGov) && (!feedNear || !me || dist(me, r) <= NEAR_M) && (feedTab === 'all' || (feedTab === 'new' ? Date.now() - r.at < 3600000 : r.yes >= 3)); }).sort(function (a, b) { return b.at - a.at; });
     if (!rs.length) { ul.appendChild(h('li', 'empty', 'ما في بلاغات هون هلأ.')); return; }
@@ -1529,9 +1565,10 @@
     function group(title, obj, withCount) {
       box.appendChild(h('b', null, title));
       Object.keys(obj).forEach(function (k) {
+        if (k === 'radar' || k === 'fire') return;
         var l = h('label'), cb = h('input'); cb.type = 'checkbox'; cb.checked = !!vis[k];
         var sw = h('span', 'sw'); sw.style.background = obj[k].c;
-        cb.addEventListener('change', function () { vis[k] = cb.checked; mode = 'custom'; renderChips(); drawPins(); refreshO(); });
+        cb.addEventListener('change', function () { vis[k] = cb.checked; if (k === 'checkpoint') vis.radar = cb.checked; if (k === 'ambulance') vis.fire = cb.checked; mode = 'custom'; renderChips(); drawPins(); refreshO(); });
         l.appendChild(cb); l.appendChild(sw); l.appendChild(document.createTextNode(obj[k].n));
         if (withCount) l.appendChild(h('span', 'cnt', String(countKind(k))));
         box.appendChild(l);
@@ -1598,6 +1635,7 @@
     var obj = addMode === 'report' ? R : F;
     Object.keys(obj).forEach(function (k) {
       if (addMode === 'facility' && !F[k].add) return;
+      if (addMode === 'report' && k === 'radar') return;
       var b = h('button'); b.type = 'button'; b.setAttribute('aria-pressed', chosen === k ? 'true' : 'false'); b.innerHTML = svg(k, obj[k].c, 26); b.appendChild(document.createTextNode(obj[k].n));
       b.addEventListener('click', function () { chosen = k; autoKind = false; buildTypes(); $('fuelWrap').hidden = !(addMode === 'facility' && k === 'fuel'); updateSend(); });
       box.appendChild(b);
@@ -1949,7 +1987,7 @@
   window.addEventListener('online', function () { setOnline(true); });
   window.addEventListener('offline', function () { setOnline(false); });
   drawPins(); go('home', { root: true });
-  addCurated(); refreshO(); plLoad(); loadBase(); loadCountry(); loadWx(); setOsmStat();
+  addCurated(); refreshO(); plLoad(); loadBase(); loadChg(); setInterval(function () { if (!document.hidden) loadChg(); }, 900000); loadCountry(); loadWx(); setOsmStat();
   setTimeout(function () { $('splash').classList.add('out'); setTimeout(function () { $('splash').remove(); }, 400); }, 1100);
   $('splash').addEventListener('click', function () { this.classList.add('out'); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
