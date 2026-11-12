@@ -1,3 +1,5 @@
+# يحدّث ملف base.json (لقطة OpenStreetMap لسوريا) تلقائياً كل يوم، ومجاناً.
+# بيشتغل كمان يدوياً: تبويب Actions > تحديث الأساس > Run workflow
 name: تحديث الأساس
 
 on:
@@ -53,7 +55,7 @@ jobs:
 
           d = fetch()
           els = d.get('elements') or []
-          if len(els) < 300:
+          if len(els) < 300:      # حماية: ما منكتب فوق الملف إذا الرد ناقص
               raise SystemExit('عدد العناصر قليل (%d)، ما منحدّث' % len(els))
 
           KEEP = {'aerodrome', 'aerodrome:type', 'aeroway', 'amenity', 'barrier', 'contact:mobile', 'contact:phone',
@@ -73,20 +75,60 @@ jobs:
           out.sort(key=lambda o: (o['type'], o['id']))
           base = {'v': 1, 'osm_base': (d.get('osm3s') or {}).get('timestamp_osm_base', ''), 'since': SINCE[:10],
                   'license': '© مساهمو OpenStreetMap (ODbL)', 'elements': out}
-          open(os.environ.get('OUT_FILE', 'base.json'), 'w', encoding='utf-8').write(json.dumps(base, ensure_ascii=False, separators=(',', ':')))
+          OUT = os.environ.get('OUT_FILE', 'base.json')
+          CHG = os.environ.get('CHG_FILE', 'changes.json')
+
+          # ---- سجل التغييرات: قارن الجديد بالقديم (للإشعارات داخل التطبيق) ----
+          def key(o): return '%s%s' % (o['type'][0], o['id'])
+          def slim(o):
+              t = o.get('tags') or {}
+              keep = {k: v for k, v in t.items() if k in ('name', 'name:ar', 'name:en', 'amenity', 'shop', 'tourism', 'emergency', 'barrier', 'highway', 'office', 'aeroway')}
+              r = {'t': o['type'], 'i': o['id'], 'tags': keep}
+              if 'lat' in o: r['lat'] = o['lat']; r['lon'] = o['lon']
+              else: r['lat'] = o['center']['lat']; r['lon'] = o['center']['lon']
+              return r
+          try:
+              old = {key(o): o for o in json.load(open(OUT, encoding='utf-8')).get('elements', [])}
+          except Exception:
+              old = None
+          try:
+              chg = json.load(open(CHG, encoding='utf-8'))
+              items = chg.get('items') or []
+          except Exception:
+              items = []
+          prev_items = list(items)
+          now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+          if old:
+              new = {key(o): o for o in out}
+              fresh = []
+              for k, o in new.items():
+                  if k not in old: fresh.append(dict(slim(o), c='add', at=now))
+                  elif old[k].get('timestamp') != o.get('timestamp'): fresh.append(dict(slim(o), c='mod', at=now))
+              gone = [k for k in old if k not in new]
+              if len(gone) <= max(50, len(old) * 0.05):      # حماية: ما منعتبر حذف جماعي تغيير حقيقي
+                  for k in gone: fresh.append(dict(slim(old[k]), c='del', at=now))
+              if len(fresh) > 3000:
+                  print('تغييرات ضخمة (%d): مزامنة كاملة، ما منسجّلها' % len(fresh)); fresh = []
+              items = fresh + items
+          cutoff = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 14 * 86400))
+          items = [x for x in items if x.get('at', '') >= cutoff][:400]
+          if not os.path.exists(CHG) or items != prev_items:      # ما منلمس الملف إذا ما تغيّر شي (بلا كوميت يومي فاضي)
+              open(CHG, 'w', encoding='utf-8').write(json.dumps({'v': 1, 'updated': now, 'items': items}, ensure_ascii=False, separators=(',', ':')))
+          print('تغييرات مسجّلة: %d' % len(items))
+          open(OUT, 'w', encoding='utf-8').write(json.dumps(base, ensure_ascii=False, separators=(',', ':')))
           print('تم: %d عنصر' % len(out))
           PY
 
       - name: احفظ التغيير
         run: |
-          if git diff --quiet -- base.json; then echo "ما في تغيير"; exit 0; fi
+          if git status --porcelain -- base.json changes.json | grep -q .; then :; else echo "ما في تغيير"; exit 0; fi
           git config user.name "darbak-bot"
           git config user.email "darbak-bot@users.noreply.github.com"
-          git add base.json
+          git add base.json changes.json
           git commit -m "تحديث تلقائي لـ base.json"
           git push
 
       - name: شغّل بناء الموقع
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || true
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || true 
