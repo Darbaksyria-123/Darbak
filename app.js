@@ -171,7 +171,7 @@
     var hr = Math.round(m / 60); return hr < 48 ? 'ينتهي بعد ' + hr + ' ساعة' : 'ينتهي بعد ' + Math.round(hr / 24) + ' أيام';
   }
   var tt;
-  function toast(m) { var t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(function () { t.hidden = true; }, 2800); }
+  function toast(m, ms) { var t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(tt); tt = setTimeout(function () { t.hidden = true; }, ms || 2800); }
 
   /* ===== الخادم (Supabase: REST + Auth) أو التخزين المحلي ===== */
   var RK = 'darbak.v3.reports', FK = 'darbak.v3.facs', VK = 'darbak.v2.votes', OK = 'darbak.v2.owner';
@@ -583,6 +583,33 @@
     return ins;
   }
   function inPoly(lat, lon) { return inRing(lat, lon, SYR_POLY) && !inRing(lat, lon, GOLAN_EX); }
+  /* فلتر الحدود: جوّا الحدود = مقبول. خارجها بأقل من 3 كم + اسم عربي = مقبول (الحدود مبسّطة وما بدنا نخسر خدمة سورية عالساحل أو الحدود) */
+  function edgeKm(la, lo) {
+    var m = 1e9, kx = 111.32 * Math.cos(la * Math.PI / 180), ky = 110.57;
+    [SYR_POLY, GOLAN_EX].forEach(function (P) {
+      for (var i = 0; i < P.length; i++) {
+        var a = P[i], b = P[(i + 1) % P.length], px = (lo - a[1]) * kx, py = (la - a[0]) * ky, bx = (b[1] - a[1]) * kx, by = (b[0] - a[0]) * ky, L = bx * bx + by * by;
+        var t = L ? Math.max(0, Math.min(1, (px * bx + py * by) / L)) : 0, d = Math.sqrt(Math.pow(px - t * bx, 2) + Math.pow(py - t * by, 2)); if (d < m) m = d;
+      }
+    });
+    return m;
+  }
+  /* مناطق تركية جوّا حدود مبسّطة (ريحانلي): حدود دقيقة عندنا ما في، فمنستثنيها بمربّع ضيّق + مؤشرات تركية بالوسوم (عنوان تركي بالوسوم؛ رقم +90 ما منعتمده لأنو سوريين كتار عندهم خطوط تركية) */
+  var TR_BOX = [[36.23, 36.52, 36.32, 36.62]], TR_ADDR = /(^|[^a-z])(turkey|t[uü]rkiye|hatay|kilis|gaziantep|antakya|reyhanl[ıi]|yayladağı|yayladagi|nusaybin|ak[cç]akale|ceylanp[ıi]nar|karkam[ıi]ş|karkamis|[sş]anl[ıi]urfa|mardin)([^a-z]|$)/i;
+  function trTags(t) {
+    if (String(t['addr:country'] || '').toUpperCase() === 'TR') return true;
+    for (var k in t) if (k.indexOf('addr:') === 0 && k !== 'addr:street' && k !== 'addr:housenumber' && TR_ADDR.test(String(t[k]))) return true;
+    return false;
+  }
+  function okGeo(la, lo, t) {
+    if (la == null || lo == null) return false;
+    t = t || {};
+    if (trTags(t)) return false;
+    for (var i = 0; i < TR_BOX.length; i++) { var b = TR_BOX[i]; if (la >= b[0] && la <= b[2] && lo >= b[1] && lo <= b[3]) return false; }
+    if (inPoly(la, lo)) return true;
+    var nm = (t['name:ar'] || '') + (t.name || '');
+    return /[\u0600-\u06FF]/.test(nm) && edgeKm(la, lo) <= 3;
+  }
   function elPt(e) { return [e.lat != null ? e.lat : (e.center && e.center.lat), e.lon != null ? e.lon : (e.center && e.center.lon)]; }
   /* الاستعلام الأساسي بيستخدم حدود سوريا الرسمية من OSM. إذا رجع فاضي على مستوى البلد، بنرجع لمربع + فلتر الحدود */
   var useArea = true;
@@ -653,22 +680,33 @@
   /* ===== مطارات ومعابر بحالة مؤكَّدة: بتحلّ مكان نسخ OSM القريبة منها =====
      الإحداثيات: ويكيبيديا. الحالة: المصدر والتاريخ مكتوبين على كل بند. عدّل الحالة هون بس تتغيّر. */
   var CST = { ok: ['يعمل', 'g'], part: ['يعمل جزئياً', 'y'], ped: ['مشاة فقط', 'y'], open: ['مفتوح', 'g'], closed: ['مغلق', 'r'] };
-  var SRC_APP = 'إدارة دربك', SRC_LC = 'Logistics Cluster (تقرير معابر ومطارات سوريا)';
+  var SRC_APP = 'إدارة دربك', SRC_LC = 'Logistics Cluster (تقرير معابر ومطارات سوريا)', SRC_SH = 'قائمة معابر سوريا المنشورة بتاريخ 20 آب 2026 (Syria is Home)';
   var CUR = [
     { id: 'cur-dam', kind: 'airport', ar: 'مطار دمشق الدولي', en: 'Damascus International Airport', code: 'DAM / OSDI', lat: 33.41056, lon: 36.51417, st: 'ok', d: '2026-11-05', src: SRC_APP, r: 6000 },
     { id: 'cur-alp', kind: 'airport', ar: 'مطار حلب الدولي', en: 'Aleppo International Airport', code: 'ALP / OSAP', lat: 36.18056, lon: 37.22417, st: 'ok', d: '2026-11-05', src: SRC_APP, r: 6000 },
     { id: 'cur-dez', kind: 'airport', ar: 'مطار دير الزور', en: 'Deir ez-Zor Airport', code: 'DEZ / OSDZ', lat: 35.28528, lon: 40.17583, st: 'part', d: '2026-11-05', src: SRC_APP, r: 6000 },
     { id: 'cur-kac', kind: 'airport', ar: 'مطار القامشلي الدولي', en: 'Qamishli International Airport', code: 'KAC / OSKL', lat: 37.02056, lon: 41.19139, st: 'closed', d: '2026-11-05', src: SRC_APP, r: 6000 },
     { id: 'cur-ltk', kind: 'airport', ar: 'مطار اللاذقية الدولي', en: 'Latakia International Airport', code: 'LTK / OSLK', lat: 35.40083, lon: 35.94861, st: 'closed', d: '2026-11-05', src: SRC_APP, r: 6000 },
-    { id: 'cur-nas', kind: 'crossing', ar: 'معبر نصيب – جابر (الأردن)', en: 'Nasib – Jaber crossing (Jordan)', lat: 32.5286, lon: 36.2008, st: 'ok', d: '2026-03-09', src: SRC_LC, r: 3000 },
-    { id: 'cur-bah', kind: 'crossing', ar: 'معبر باب الهوى – جيلفه غوزو (تركيا)', en: 'Bab al-Hawa – Cilvegözü crossing (Türkiye)', lat: 36.230639, lon: 36.692639, st: 'ok', d: '2026-03-09', src: SRC_LC, r: 3000 },
-    { id: 'cur-qaa', kind: 'crossing', ar: 'معبر البوكمال – القائم (العراق)', en: 'Abu Kamal – Al-Qa\'im crossing (Iraq)', lat: 34.4, lon: 40.98, st: 'open', d: '2026-03-09', src: SRC_LC, r: 3000, ap: 1 }
+    { id: 'cur-nas', kind: 'crossing', ar: 'معبر نصيب – جابر (الأردن)', en: 'Nasib – Jaber crossing (Jordan)', lat: 32.5286, lon: 36.2008, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: 'على مدار الساعة' },
+    { id: 'cur-yab', kind: 'crossing', ar: 'معبر جديدة يابوس – المصنع (لبنان)', en: 'Jdeidet Yabous – Masnaa crossing (Lebanon)', lat: 33.702, lon: 35.922, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: 'على مدار الساعة' },
+    { id: 'cur-jou', kind: 'crossing', ar: 'معبر جوسية – القاع (لبنان)', en: 'Jousieh – Qaa crossing (Lebanon)', lat: 34.41, lon: 36.5, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '6 ص – 12 منتصف الليل' },
+    { id: 'cur-ari', kind: 'crossing', ar: 'معبر العريضة (لبنان)', en: 'Arida crossing (Lebanon)', lat: 34.63556, lon: 35.97611, st: 'closed', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: 'مغلق مؤقتاً منذ 6 آب 2026 لأعمال الجسر' },
+    { id: 'cur-jis', kind: 'crossing', ar: 'معبر جسر القمر – البقيعة (لبنان)', en: 'Jisr al-Qamar – Bqaiaa crossing (Lebanon)', lat: 34.63, lon: 36.4, st: 'ped', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: 'مشاة فقط، 6 ص – 6 م' },
+    { id: 'cur-qaa', kind: 'crossing', ar: 'معبر البوكمال – القائم (العراق)', en: 'Abu Kamal – Al-Qa\'im crossing (Iraq)', lat: 34.4, lon: 40.98, st: 'open', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8 ص – 8 م' },
+    { id: 'cur-yar', kind: 'crossing', ar: 'معبر اليعربية – ربيعة (العراق)', en: 'Al-Yarubiyah – Rabia crossing (Iraq)', lat: 36.82, lon: 42.03, st: 'open', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 8:30 م' },
+    { id: 'cur-sem', kind: 'crossing', ar: 'معبر سيمالكا – فيشخابور (العراق)', en: 'Semalka – Faysh Khabur crossing (Iraq)', lat: 37.07, lon: 42.37, st: 'open', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 5 م' },
+    { id: 'cur-bah', kind: 'crossing', ar: 'معبر باب الهوى – جيلفه غوزو (تركيا)', en: 'Bab al-Hawa – Cilvegözü crossing (Türkiye)', lat: 36.230639, lon: 36.692639, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: 'على مدار الساعة' },
+    { id: 'cur-sal', kind: 'crossing', ar: 'معبر باب السلامة – أونجو بينار (تركيا)', en: 'Bab al-Salama – Öncüpınar crossing (Türkiye)', lat: 36.63439, lon: 37.08576, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: '9 ص – 5 م' },
+    { id: 'cur-rai', kind: 'crossing', ar: 'معبر الراعي – تشوبان بي (تركيا)', en: 'Al-Rai – Çobanbey crossing (Türkiye)', lat: 36.63694, lon: 37.47556, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: '8 ص – 8 م' },
+    { id: 'cur-jar', kind: 'crossing', ar: 'معبر جرابلس – قرقميش (تركيا)', en: 'Jarablus – Karkamış crossing (Türkiye)', lat: 36.83389, lon: 37.99694, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 8 م' },
+    { id: 'cur-kas', kind: 'crossing', ar: 'معبر كسب (تركيا)', en: 'Kassab crossing (Türkiye)', lat: 35.905, lon: 36.01, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8 ص – 5 م' },
+    { id: 'cur-tab', kind: 'crossing', ar: 'معبر تل أبيض – أقجه قلعة (تركيا)', en: 'Tell Abyad – Akçakale crossing (Türkiye)', lat: 36.705, lon: 38.953, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 5 م' }
   ];
   function addCurated() {
     Object.keys(osm).forEach(function (k) { if (osm[k].fallback) delete osm[k]; });
     CUR.forEach(function (c) {
       Object.keys(osm).forEach(function (k) { var p = osm[k]; if (!p.cur && p.kind === c.kind && dist(p, c) < c.r) delete osm[k]; });
-      osm[c.id] = { id: c.id, cur: 1, kind: c.kind, sub: c.kind === 'airport' ? 'مطار مدني' : 'معبر حدودي', lat: c.lat, lon: c.lon, name: LANG === 'en' ? c.en : c.ar, note: c.code ? 'رمز ' + c.code : '', fuel: '', ot: 'node', oid: 0, st: c.st, sd: Date.parse(c.d), ssrc: c.src, ap: c.ap || 0, ts: 0 };
+      osm[c.id] = { id: c.id, cur: 1, kind: c.kind, sub: c.kind === 'airport' ? 'مطار مدني' : 'معبر حدودي', lat: c.lat, lon: c.lon, name: LANG === 'en' ? c.en : c.ar, note: c.code ? 'رمز ' + c.code : (c.hrs ? 'الدوام: ' + c.hrs : ''), fuel: '', ot: 'node', oid: 0, st: c.st, sd: Date.parse(c.d), ssrc: c.src, ap: c.ap || 0, ts: 0 };
     });
   }
   function curInfo(it) {
@@ -679,7 +717,7 @@
     if (Date.now() - it.sd > 90 * 86400000) src.appendChild(h('span', 'stale', 'الحالة ممكن تكون تغيّرت من هداك التاريخ، تحقق قبل السفر'));
     box.appendChild(src); return box;
   }
-  function addOsm(els) { var n = 0; els.forEach(function (e) { var p = toPoi(e); if (p && (!osm[p.id] || osm[p.id].base)) { osm[p.id] = p; n++; } }); if (n) addCurated(); return n; }
+  function addOsm(els) { var n = 0; els.forEach(function (e) { var pt = elPt(e); if (!okGeo(pt[0], pt[1], e.tags)) return; var p = toPoi(e); if (p && (!osm[p.id] || osm[p.id].base)) { osm[p.id] = p; n++; } }); if (n) addCurated(); return n; }
 
   var chain = Promise.resolve(), cellState = {}, osmErr = false, countryState = 'idle';
   function setOsmStat() {
@@ -732,7 +770,7 @@
   function loadBase() {
     return fetch('base.json?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('base'); return r.json(); }).then(function (b) {
       if (!b || !Array.isArray(b.elements)) return;
-      b.elements.forEach(function (e) { var p = toPoi(e); if (p && !osm[p.id]) { p.base = 1; osm[p.id] = p; } });
+      b.elements.forEach(function (e) { var pt = elPt(e); if (!okGeo(pt[0], pt[1], e.tags)) return; var p = toPoi(e); if (p && !osm[p.id]) { p.base = 1; osm[p.id] = p; } });
       var tb = b.osm_base && Date.parse(b.osm_base); if (tb && tb > osmBase) { osmBase = tb; stampOsm(); }
       addCurated(); refreshO(); setOsmStat(); renderScreen(cur);
     }).catch(function () {});
@@ -931,7 +969,7 @@
     return fetch('changes.json?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('chg'); return r.json(); }).then(function (d) {
       var out = [];
       ((d && d.items) || []).forEach(function (x) {
-        if (!x || !x.tags || x.lat == null || x.lon == null || !UPD_TAG[x.c]) return;
+        if (!x || !x.tags || x.lat == null || x.lon == null || !UPD_TAG[x.c] || !okGeo(x.lat, x.lon, x.tags)) return;
         var p = toPoi({ type: x.t, id: x.i, tags: x.tags, lat: x.lat, lon: x.lon, timestamp: '' });
         if (!p || !F[p.kind]) return;
         p.c = x.c; p.at = Date.parse(x.at) || 0; if (p.at) out.push(p);
@@ -1189,9 +1227,14 @@
       b.appendChild(h('b', null, title)); if (sub) b.appendChild(h('small', null, sub)); if (fn) { b.appendChild(h('span', 'ch', '‹')); b.addEventListener('click', fn); }
       if (pressed != null) b.setAttribute('aria-pressed', pressed ? 'true' : 'false'); m.appendChild(b); return b;
     }
-    if (!standalone() && (installEv || isIOS())) row('home', 'ثبّت دربك على هاتفك', isIOS() && !installEv ? 'شاركة ثم أضف للشاشة الرئيسية' : 'بيفتح مثل أي تطبيق', function () {
-      if (installEv) { installEv.prompt(); installEv.userChoice.then(function () { installEv = null; renderMore(); }); }
-      else toast('بسفاري: اضغط زر المشاركة ثم "إضافة إلى الشاشة الرئيسية"');
+    /* زر تثبيت ثابت دائماً (بيتغيّر شرحه حسب الجهاز) */
+    var inApp = /FBAN|FBAV|Instagram|WhatsApp|Telegram|Line\/|GSA\/|; wv\)/i.test(navigator.userAgent);
+    row('home', standalone() ? 'التطبيق مثبّت ✓' : 'ثبّت دربك على هاتفك', standalone() ? 'عم تفتحه كتطبيق' : (installEv ? 'بيفتح مثل أي تطبيق' : isIOS() ? 'شاركة ثم أضف للشاشة الرئيسية' : 'اضغط لشرح التثبيت'), function () {
+      if (standalone()) { toast('دربك مثبّت عندك وعم يشتغل كتطبيق'); return; }
+      if (installEv) { installEv.prompt(); installEv.userChoice.then(function () { installEv = null; renderMore(); }); return; }
+      if (inApp) toast('افتح الرابط بمتصفح كروم أو سفاري، بعدين ثبّته', 6000);
+      else if (isIOS()) toast('بسفاري: اضغط زر المشاركة ⬆️ ثم «إضافة إلى الشاشة الرئيسية»', 6000);
+      else toast('من قائمة المتصفح ⋮ اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»', 6000);
     });
     row('user', 'حسابي', session ? session.email : (profile.name || 'الملف الشخصي'), function () { go('acct'); });
     row('mine', 'بلاغاتي', mine ? mine + '' : '', function () { go('mine'); });
