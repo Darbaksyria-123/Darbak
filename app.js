@@ -112,7 +112,7 @@
     municipality: { n: 'بلدية',           c: '#2f5d3a', add: 1 },
     registry:     { n: 'دائرة نفوس',      c: '#4a3ab8', add: 1 },
     airport:      { n: 'مطار',            c: '#0a58a8', add: 1 },
-    crossing:     { n: 'معبر حدودي',      c: '#a31515' }
+    crossing:     { n: 'معبر حدودي',      c: '#a31515', add: 1 }
   };
   var ROOT = document.documentElement.style;
   Object.keys(R).forEach(function (k) { ROOT.setProperty('--c-' + k, R[k].c); });
@@ -602,10 +602,12 @@
     for (var k in t) if (k.indexOf('addr:') === 0 && k !== 'addr:street' && k !== 'addr:housenumber' && TR_ADDR.test(String(t[k]))) return true;
     return false;
   }
+  function heTags(t) { var k = ['name', 'name:he', 'brand', 'operator', 'addr:street', 'addr:city'], i; for (i = 0; i < k.length; i++) if (t[k[i]] && /[\u0590-\u05FF]/.test(t[k[i]])) return true; return !!t['name:he'] && !t['name:ar']; }
   function okGeo(la, lo, t) {
     if (la == null || lo == null) return false;
     t = t || {};
     if (trTags(t)) return false;
+    if (heTags(t)) return false;
     for (var i = 0; i < TR_BOX.length; i++) { var b = TR_BOX[i]; if (la >= b[0] && la <= b[2] && lo >= b[1] && lo <= b[3]) return false; }
     if (inPoly(la, lo)) return true;
     var nm = (t['name:ar'] || '') + (t.name || '');
@@ -707,14 +709,14 @@
     Object.keys(osm).forEach(function (k) { if (osm[k].fallback) delete osm[k]; });
     CUR.forEach(function (c) {
       Object.keys(osm).forEach(function (k) { var p = osm[k]; if (!p.cur && p.kind === c.kind && dist(p, c) < c.r) delete osm[k]; });
-      osm[c.id] = { id: c.id, cur: 1, kind: c.kind, sub: c.kind === 'airport' ? 'مطار مدني' : 'معبر حدودي', lat: c.lat, lon: c.lon, name: LANG === 'en' ? c.en : c.ar, note: c.code ? 'رمز ' + c.code : (c.hrs ? 'الدوام: ' + c.hrs : ''), fuel: '', ot: 'node', oid: 0, st: c.st, sd: Date.parse(c.d), ssrc: c.src, ap: c.ap || 0, ts: 0 };
+      osm[c.id] = { id: c.id, cur: 1, kind: c.kind, sub: c.kind === 'airport' ? 'مطار مدني' : 'معبر حدودي', lat: c.lat, lon: c.lon, name: LANG === 'en' ? c.en : c.ar, note: c.code ? 'رمز ' + c.code : (c.hrs ? 'الدوام: ' + c.hrs : ''), fuel: '', ot: 'node', oid: 0, st: c.st, sd: Date.parse(c.d), ssrc: c.src, ap: c.ap || 0, op: c.op || 0, ts: 0 };
     });
   }
   function curInfo(it) {
     var box = h('div', 'oinfo'), s = CST[it.st] || CST.open;
     var st = h('p', 'cst ' + s[1]); st.appendChild(document.createTextNode('الحالة: ' + s[0])); box.appendChild(st);
     var src = h('p', 'osmsrc'); src.appendChild(h('span', 'srcl', 'مصدر الحالة: ' + it.ssrc + ' · ' + fmtDate(it.sd)));
-    src.appendChild(h('span', 'srcl', 'مصدر الموقع: مصادر مفتوحة (ويكيبيديا وغيرها)' + (it.ap ? ' · موقع تقريبي' : '')));
+    src.appendChild(h('span', 'srcl', 'مصدر الموقع: ' + (it.op ? 'OpenStreetMap (موقع نقطة الحدود)' : 'مصادر مفتوحة (ويكيبيديا وغيرها)' + (it.ap ? ' · موقع تقريبي' : ''))));
     if (Date.now() - it.sd > 90 * 86400000) src.appendChild(h('span', 'stale', 'الحالة ممكن تكون تغيّرت من هداك التاريخ، تحقق قبل السفر'));
     box.appendChild(src); return box;
   }
@@ -768,6 +770,20 @@
     return (r.d <= 2500 ? ty + ' ' + nm : 'بالقرب من ' + nm) + ' · ' + govOf(p);
   }
   /* لقطة أساسية جاهزة (base.json): بتتحدّث لحالها كل يوم عبر GitHub Actions. بتظهر فوراً، وأي نسخة أحدث من Overpass بتحل مكانها */
+  /* مواقع المعابر الدقيقة: الأكشن بيسحب نقاط barrier=border_control من OSM بملف crossings.json، والتطبيق بيلصق كل معبر على أقرب نقطة (أقل من 8 كم) */
+  function loadCx() {
+    fetch('crossings.json?v=' + Math.floor(Date.now() / 3600000), { cache: 'no-cache' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j || !j.items || !j.items.length) return;
+      var ch = 0;
+      CUR.forEach(function (c) {
+        if (c.kind !== 'crossing') return;
+        var best = null, bd = 8;
+        j.items.forEach(function (x) { if (!okGeo(x.la, x.lo, { name: x.n || 'ع' })) return; var d = dist({ lat: x.la, lon: x.lo }, c) / 1000; if (d < bd) { bd = d; best = x; } });
+        if (best && (c.lat !== best.la || c.lon !== best.lo)) { c.lat = best.la; c.lon = best.lo; c.op = 1; c.ap = 0; ch++; }
+      });
+      if (ch) { addCurated(); refreshO(); }
+    }).catch(function () {});
+  }
   function loadBase() {
     return fetch('base.json?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('base'); return r.json(); }).then(function (b) {
       if (!b || !Array.isArray(b.elements)) return;
@@ -1695,11 +1711,13 @@
     $('ftitle').textContent = isR ? 'إرسال بلاغ' : 'إضافة مرفق أو خدمة';
     $('fsub').textContent = isR ? 'شارك ما تراه على الطريق' : 'أضف مكان مفيد للناس';
     $('fnameLbl').firstChild.nodeValue = isR ? 'اسم الطريق (اختياري)' : 'اسم المرفق (مطلوب)';
-    $('fname').placeholder = isR ? 'مثال: أوتوستراد المزة' : 'مثال: كازية المزة';
+    var PHN = { fuel: 'مثال: كازية المزة', hospital: 'مثال: مشفى المواساة', pharmacy: 'مثال: صيدلية الشفاء', restaurant: 'مثال: مطعم الشلال', rest: 'مثال: استراحة الأمل', bakery: 'مثال: فرن الغوطة', exchange: 'مثال: مكتب الشام للصرافة', hotel: 'مثال: فندق الأمويين', police: 'مثال: مخفر الميدان', ambulance: 'مثال: مركز إسعاف المزة', municipality: 'مثال: بلدية المزة', registry: 'مثال: دائرة نفوس الميدان', airport: 'مثال: مطار دمشق الدولي', crossing: 'مثال: معبر نصيب – جابر' };
+    var PHT = { fuel: 'ساعات الدوام أو أقرب معلم', pharmacy: 'ساعات الدوام أو أقرب معلم', hospital: 'الأقسام المتوفرة أو أقرب معلم', restaurant: 'نوع الأكل، الدوام، أو أقرب معلم', bakery: 'أوقات الخبز أو أقرب معلم', exchange: 'ساعات الدوام أو أقرب معلم', hotel: 'عدد النجوم أو أقرب معلم', police: 'أقرب معلم', ambulance: 'رقم الطوارئ أو أقرب معلم', municipality: 'ساعات الدوام أو أقرب معلم', registry: 'ساعات الدوام أو أقرب معلم', airport: 'الرمز أو أقرب معلم', rest: 'الخدمات المتوفرة أو أقرب معلم', crossing: 'الدوام والحالة (مفتوح/مغلق)' };
+    $('fname').placeholder = isR ? 'مثال: أوتوستراد المزة' : (PHN[chosen] || 'اكتب اسم المكان');
     $('photoWrap').hidden = !isR; $('hoursWrap').hidden = isR; $('dutyRow').hidden = !(!isR && chosen === 'pharmacy');
     $('fsend').textContent = isR ? 'أرسل البلاغ' : 'أضف المرفق';
     $('fhint').textContent = isR ? 'البلاغ مجهول. الموقع بينقرّب لحوالي 100 متر، والصورة بتنعاد كتابتها فبتنحذف منها بيانات الكاميرا والموقع.' : 'المرفق بيظهر للجميع فوراً بموقعه الدقيق. إذا المعلومة غلط، الناس بيقدروا يبلّغوا عنها.';
-    $('fnote').placeholder = isR ? 'أضف تفاصيل تساعد الآخرين…' : 'ساعات الدوام أو أقرب معلم';
+    $('fnote').placeholder = isR ? 'أضف تفاصيل تساعد الآخرين…' : (PHT[chosen] || 'ساعات الدوام أو أقرب معلم');
     updateSend();
   }
   function updateSend() {
@@ -2037,7 +2055,7 @@
   window.addEventListener('online', function () { setOnline(true); });
   window.addEventListener('offline', function () { setOnline(false); });
   drawPins(); go('home', { root: true });
-  addCurated(); refreshO(); plLoad(); loadBase(); loadChg(); setInterval(function () { if (!document.hidden) loadChg(); }, 900000); loadCountry(); loadWx(); setOsmStat();
+  addCurated(); refreshO(); plLoad(); loadBase(); loadCx(); loadChg(); setInterval(function () { if (!document.hidden) loadChg(); }, 900000); loadCountry(); loadWx(); setOsmStat();
   setTimeout(function () { $('splash').classList.add('out'); setTimeout(function () { $('splash').remove(); }, 400); }, 1100);
   $('splash').addEventListener('click', function () { this.classList.add('out'); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
