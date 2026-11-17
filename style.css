@@ -548,3 +548,5 @@ html,body{overflow-x:hidden;touch-action:pan-y}
 
 /* v21: تبويب تحديثات الخدمات */
 .tabs3 button{position:relative}.ubadge{font-style:normal;display:inline-block;min-width:17px;height:17px;line-height:17px;border-radius:9px;background:#d62f2f;color:#fff;font-size:10.5px;margin-inline-start:4px;padding:0 4px}
+
+.osmsrc .srcl{display:block;margin:2px 0}

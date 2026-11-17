@@ -79,6 +79,7 @@
     wx: '<path d="M7 15a4 4 0 01.5-7.9A5 5 0 0117 9a3.2 3.2 0 01-.5 6z"/>',
     drive: '<path d="M12 3l7 17-7-4-7 4z"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.1"/>',
+    share: '<circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.8l7.4-4.4M8.3 13.2l7.4 4.4"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
     phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -680,7 +681,7 @@
   /* ===== مطارات ومعابر بحالة مؤكَّدة: بتحلّ مكان نسخ OSM القريبة منها =====
      الإحداثيات: ويكيبيديا. الحالة: المصدر والتاريخ مكتوبين على كل بند. عدّل الحالة هون بس تتغيّر. */
   var CST = { ok: ['يعمل', 'g'], part: ['يعمل جزئياً', 'y'], ped: ['مشاة فقط', 'y'], open: ['مفتوح', 'g'], closed: ['مغلق', 'r'] };
-  var SRC_APP = 'إدارة دربك', SRC_LC = 'Logistics Cluster (تقرير معابر ومطارات سوريا)', SRC_SH = 'قائمة معابر سوريا المنشورة بتاريخ 20 آب 2026 (Syria is Home)';
+  var SRC_APP = 'إدارة دربك', SRC_LC = 'Logistics Cluster (تقرير معابر ومطارات سوريا)', SRC_SH = 'قائمة معابر سوريا (Syria is Home)';
   var CUR = [
     { id: 'cur-dam', kind: 'airport', ar: 'مطار دمشق الدولي', en: 'Damascus International Airport', code: 'DAM / OSDI', lat: 33.41056, lon: 36.51417, st: 'ok', d: '2026-11-05', src: SRC_APP, r: 6000 },
     { id: 'cur-alp', kind: 'airport', ar: 'مطار حلب الدولي', en: 'Aleppo International Airport', code: 'ALP / OSAP', lat: 36.18056, lon: 37.22417, st: 'ok', d: '2026-11-05', src: SRC_APP, r: 6000 },
@@ -688,19 +689,19 @@
     { id: 'cur-kac', kind: 'airport', ar: 'مطار القامشلي الدولي', en: 'Qamishli International Airport', code: 'KAC / OSKL', lat: 37.02056, lon: 41.19139, st: 'closed', d: '2026-11-05', src: SRC_APP, r: 6000 },
     { id: 'cur-ltk', kind: 'airport', ar: 'مطار اللاذقية الدولي', en: 'Latakia International Airport', code: 'LTK / OSLK', lat: 35.40083, lon: 35.94861, st: 'closed', d: '2026-11-05', src: SRC_APP, r: 6000 },
     { id: 'cur-nas', kind: 'crossing', ar: 'معبر نصيب – جابر (الأردن)', en: 'Nasib – Jaber crossing (Jordan)', lat: 32.5286, lon: 36.2008, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: 'على مدار الساعة' },
-    { id: 'cur-yab', kind: 'crossing', ar: 'معبر جديدة يابوس – المصنع (لبنان)', en: 'Jdeidet Yabous – Masnaa crossing (Lebanon)', lat: 33.702, lon: 35.922, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: 'على مدار الساعة' },
-    { id: 'cur-jou', kind: 'crossing', ar: 'معبر جوسية – القاع (لبنان)', en: 'Jousieh – Qaa crossing (Lebanon)', lat: 34.41, lon: 36.5, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '6 ص – 12 منتصف الليل' },
+    { id: 'cur-yab', kind: 'crossing', ar: 'معبر جديدة يابوس – المصنع (لبنان)', en: 'Jdeidet Yabous – Masnaa crossing (Lebanon)', lat: 33.65389, lon: 35.97167, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: 'على مدار الساعة' },
+    { id: 'cur-jou', kind: 'crossing', ar: 'معبر جوسية – القاع (لبنان)', en: 'Jousieh – Qaa crossing (Lebanon)', lat: 34.42528, lon: 36.555, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '6 ص – 12 منتصف الليل' },
     { id: 'cur-ari', kind: 'crossing', ar: 'معبر العريضة (لبنان)', en: 'Arida crossing (Lebanon)', lat: 34.63556, lon: 35.97611, st: 'closed', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: 'مغلق مؤقتاً منذ 6 آب 2026 لأعمال الجسر' },
     { id: 'cur-jis', kind: 'crossing', ar: 'معبر جسر القمر – البقيعة (لبنان)', en: 'Jisr al-Qamar – Bqaiaa crossing (Lebanon)', lat: 34.63, lon: 36.4, st: 'ped', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: 'مشاة فقط، 6 ص – 6 م' },
     { id: 'cur-qaa', kind: 'crossing', ar: 'معبر البوكمال – القائم (العراق)', en: 'Abu Kamal – Al-Qa\'im crossing (Iraq)', lat: 34.4, lon: 40.98, st: 'open', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8 ص – 8 م' },
-    { id: 'cur-yar', kind: 'crossing', ar: 'معبر اليعربية – ربيعة (العراق)', en: 'Al-Yarubiyah – Rabia crossing (Iraq)', lat: 36.82, lon: 42.03, st: 'open', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 8:30 م' },
-    { id: 'cur-sem', kind: 'crossing', ar: 'معبر سيمالكا – فيشخابور (العراق)', en: 'Semalka – Faysh Khabur crossing (Iraq)', lat: 37.07, lon: 42.37, st: 'open', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 5 م' },
+    { id: 'cur-yar', kind: 'crossing', ar: 'معبر اليعربية – ربيعة (العراق)', en: 'Al-Yarubiyah – Rabia crossing (Iraq)', lat: 36.81167, lon: 42.06639, st: 'open', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 8:30 م' },
+    { id: 'cur-sem', kind: 'crossing', ar: 'معبر سيمالكا – فيشخابور (العراق)', en: 'Semalka – Faysh Khabur crossing (Iraq)', lat: 37.089323, lon: 42.34989, st: 'open', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: '8:30 ص – 5 م' },
     { id: 'cur-bah', kind: 'crossing', ar: 'معبر باب الهوى – جيلفه غوزو (تركيا)', en: 'Bab al-Hawa – Cilvegözü crossing (Türkiye)', lat: 36.230639, lon: 36.692639, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: 'على مدار الساعة' },
     { id: 'cur-sal', kind: 'crossing', ar: 'معبر باب السلامة – أونجو بينار (تركيا)', en: 'Bab al-Salama – Öncüpınar crossing (Türkiye)', lat: 36.63439, lon: 37.08576, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: '9 ص – 5 م' },
     { id: 'cur-rai', kind: 'crossing', ar: 'معبر الراعي – تشوبان بي (تركيا)', en: 'Al-Rai – Çobanbey crossing (Türkiye)', lat: 36.63694, lon: 37.47556, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, hrs: '8 ص – 8 م' },
-    { id: 'cur-jar', kind: 'crossing', ar: 'معبر جرابلس – قرقميش (تركيا)', en: 'Jarablus – Karkamış crossing (Türkiye)', lat: 36.83389, lon: 37.99694, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 8 م' },
-    { id: 'cur-kas', kind: 'crossing', ar: 'معبر كسب (تركيا)', en: 'Kassab crossing (Türkiye)', lat: 35.905, lon: 36.01, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8 ص – 5 م' },
-    { id: 'cur-tab', kind: 'crossing', ar: 'معبر تل أبيض – أقجه قلعة (تركيا)', en: 'Tell Abyad – Akçakale crossing (Türkiye)', lat: 36.705, lon: 38.953, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 5 م' }
+    { id: 'cur-jar', kind: 'crossing', ar: 'معبر جرابلس – قرقميش (تركيا)', en: 'Jarablus – Karkamış crossing (Türkiye)', lat: 36.8275, lon: 38.0, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 8 م' },
+    { id: 'cur-kas', kind: 'crossing', ar: 'معبر كسب (تركيا)', en: 'Kassab crossing (Türkiye)', lat: 35.93, lon: 35.997, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8 ص – 5 م' },
+    { id: 'cur-tab', kind: 'crossing', ar: 'معبر تل أبيض – أقجه قلعة (تركيا)', en: 'Tell Abyad – Akçakale crossing (Türkiye)', lat: 36.703, lon: 38.951, st: 'ok', d: '2026-08-20', src: SRC_SH, r: 3000, ap: 1, hrs: '8:30 ص – 5 م' }
   ];
   function addCurated() {
     Object.keys(osm).forEach(function (k) { if (osm[k].fallback) delete osm[k]; });
@@ -712,8 +713,8 @@
   function curInfo(it) {
     var box = h('div', 'oinfo'), s = CST[it.st] || CST.open;
     var st = h('p', 'cst ' + s[1]); st.appendChild(document.createTextNode('الحالة: ' + s[0])); box.appendChild(st);
-    var src = h('p', 'osmsrc'); src.appendChild(document.createTextNode('مصدر الحالة: ' + it.ssrc + ' · ' + fmtDate(it.sd)));
-    src.appendChild(document.createTextNode('مصدر الموقع: ويكيبيديا' + (it.ap ? ' (موقع تقريبي)' : '')));
+    var src = h('p', 'osmsrc'); src.appendChild(h('span', 'srcl', 'مصدر الحالة: ' + it.ssrc + ' · ' + fmtDate(it.sd)));
+    src.appendChild(h('span', 'srcl', 'مصدر الموقع: مصادر مفتوحة (ويكيبيديا وغيرها)' + (it.ap ? ' · موقع تقريبي' : '')));
     if (Date.now() - it.sd > 90 * 86400000) src.appendChild(h('span', 'stale', 'الحالة ممكن تكون تغيّرت من هداك التاريخ، تحقق قبل السفر'));
     box.appendChild(src); return box;
   }
@@ -1122,7 +1123,7 @@
     }
     if (cur) tile(cur, true); else SG.forEach(function (g) { tile(g, false); });
     var sb = $('svcSrc'); sb.textContent = '';
-    [['all', 'الكل'], ['user', 'أضافها المستخدمون'], ['osm', 'OpenStreetMap']].forEach(function (x) { var b = h('button', null, x[1]); b.type = 'button'; b.setAttribute('aria-pressed', svcSrc === x[0] ? 'true' : 'false'); b.addEventListener('click', function () { svcSrc = x[0]; renderSvc(); }); sb.appendChild(b); });
+    [['all', 'الكل'], ['user', 'أضافها المستخدمون'], ['osm', 'OSM']].forEach(function (x) { var b = h('button', null, x[1]); b.type = 'button'; b.setAttribute('aria-pressed', svcSrc === x[0] ? 'true' : 'false'); b.addEventListener('click', function () { svcSrc = x[0]; renderSvc(); }); sb.appendChild(b); });
     var ul = $('svcList'); ul.textContent = '';
     if ((svcKind === 'fuel' || svcKind === 'pharmacy') && remote) {
       var fr = h('li', 'fseg'), fs = h('div', 'seg'); fs.setAttribute('role', 'group'); fs.setAttribute('aria-label', svcKind === 'pharmacy' ? 'فلتر المناوبة' : 'فلتر المحروقات');
@@ -1235,6 +1236,12 @@
       if (inApp) toast('افتح الرابط بمتصفح كروم أو سفاري، بعدين ثبّته', 6000);
       else if (isIOS()) toast('بسفاري: اضغط زر المشاركة ⬆️ ثم «إضافة إلى الشاشة الرئيسية»', 6000);
       else toast('من قائمة المتصفح ⋮ اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»', 6000);
+    });
+    row('share', 'شارك دربك مع أصحابك', 'رابط قصير للدعوة', function () {
+      var u = new URL('j/', location.href).href, tx = 'دربك: بلاغات الطرق والخدمات بسوريا (مجاني)';
+      if (navigator.share) { navigator.share({ title: 'دربك', text: tx, url: u }).catch(function () {}); return; }
+      var done = function () { toast('انسخ الرابط: ' + u, 5000); };
+      try { navigator.clipboard.writeText(u).then(function () { toast('اننسخ الرابط: ' + u, 4000); }, done); } catch (e) { done(); }
     });
     row('user', 'حسابي', session ? session.email : (profile.name || 'الملف الشخصي'), function () { go('acct'); });
     row('mine', 'بلاغاتي', mine ? mine + '' : '', function () { go('mine'); });
