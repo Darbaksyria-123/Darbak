@@ -1257,7 +1257,7 @@
       var u = new URL('j/', location.href).href, tx = 'دربك: بلاغات الطرق والخدمات بسوريا (مجاني)';
       if (navigator.share) { navigator.share({ title: 'دربك', text: tx, url: u }).catch(function () {}); return; }
       var done = function () { toast('انسخ الرابط: ' + u, 5000); };
-      try { navigator.clipboard.writeText(u).then(function () { toast('اننسخ الرابط: ' + u, 4000); }, done); } catch (e) { done(); }
+      try { navigator.clipboard.writeText(u).then(function () { toast('انسخ الرابط: ' + u, 4000); }, done); } catch (e) { done(); }
     });
     row('user', 'حسابي', session ? session.email : (profile.name || 'الملف الشخصي'), function () { go('acct'); });
     row('mine', 'بلاغاتي', mine ? mine + '' : '', function () { go('mine'); });
@@ -1266,6 +1266,28 @@
     row('drive', 'وضع القيادة', watchId == null ? 'متوقّف' : 'شغّال', function () { if (watchId == null) startDrive(); else stopDrive(); renderMore(); }, watchId != null);
     row(LANG === 'en' ? FLAG_EN : FLAG_SY, 'اللغة', LANG === 'en' ? 'English ⇄ العربية' : 'العربية · English', function () { setLang(LANG === 'en' ? 'ar' : 'en'); });
     row('info', 'الدعم والمعلومات', 'من نحن، الشروط، الخصوصية، تواصل', openInfo);
+    row('info', 'إصدار دربك', 'الإصدار ' + APP_VER + (newVer ? ' · في تحديث جديد' : ''), function () { if (newVer) applyUpd(); else chkVer(true); }, !!newVer);
+  }
+  /* ===== رقم الإصدار وإشعار التحديث: APP_VER هون لازم يطابق v بملف version.json لما نكون محدّثين ===== */
+  var APP_VER = 1, newVer = 0, verNote = '';
+  function applyUpd() { location.href = location.pathname + '?u=' + Date.now(); }
+  function showUpd() {
+    var b = $('updBar'); if (!b) { b = h('div', 'updbar'); b.id = 'updBar'; document.body.appendChild(b); }
+    b.textContent = ''; b.hidden = false;
+    var t = h('button', 'updgo', 'في تحديث جديد لدربك (الإصدار ' + newVer + ') · تحديث الآن'); t.type = 'button'; t.onclick = applyUpd; b.appendChild(t);
+    if (verNote) b.appendChild(h('span', 'updnote', verNote));
+    var x = h('button', 'updx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'إغلاق'); x.onclick = function () { b.hidden = true; try { sessionStorage.setItem('dk_updx', newVer + ''); } catch (e) {} }; b.appendChild(x);
+  }
+  function chkVer(manual) {
+    fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j || typeof j.v !== 'number') { if (manual) toast('تعذّر فحص التحديث، جرّب لاحقاً'); return; }
+      if (j.v > APP_VER) {
+        newVer = j.v; verNote = typeof j.notes === 'string' ? j.notes.slice(0, 120) : '';
+        var dis = ''; try { dis = sessionStorage.getItem('dk_updx') || ''; } catch (e) {}
+        if (manual || dis !== newVer + '') showUpd();
+        if (cur === 'more') renderMore();
+      } else if (manual) toast('أنت على آخر إصدار (' + APP_VER + ')');
+    }).catch(function () { if (manual) toast('تعذّر فحص التحديث، تأكد من النت'); });
   }
   function renderMine() {
     var ul = $('mineList'); ul.textContent = '';
@@ -2055,7 +2077,7 @@
   window.addEventListener('online', function () { setOnline(true); });
   window.addEventListener('offline', function () { setOnline(false); });
   drawPins(); go('home', { root: true });
-  addCurated(); refreshO(); plLoad(); loadBase(); loadCx(); loadChg(); setInterval(function () { if (!document.hidden) loadChg(); }, 900000); loadCountry(); loadWx(); setOsmStat();
+  addCurated(); refreshO(); plLoad(); loadBase(); loadCx(); chkVer(); setInterval(function () { if (!document.hidden) chkVer(); }, 3600000); loadChg(); setInterval(function () { if (!document.hidden) loadChg(); }, 900000); loadCountry(); loadWx(); setOsmStat();
   setTimeout(function () { $('splash').classList.add('out'); setTimeout(function () { $('splash').remove(); }, 400); }, 1100);
   $('splash').addEventListener('click', function () { this.classList.add('out'); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });

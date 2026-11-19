@@ -551,3 +551,9 @@ html,body{overflow-x:hidden;touch-action:pan-y}
 .tabs3 button{position:relative}.ubadge{font-style:normal;display:inline-block;min-width:17px;height:17px;line-height:17px;border-radius:9px;background:#d62f2f;color:#fff;font-size:10.5px;margin-inline-start:4px;padding:0 4px}
 
 .osmsrc .srcl{display:block;margin:2px 0}
+
+.updbar { position: fixed; z-index: 6500; left: 12px; right: 12px; bottom: calc(92px + env(safe-area-inset-bottom, 0px)); background: #0b6b46; color: #fff; border-radius: 14px; padding: 10px 44px 10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.3); display: flex; flex-direction: column; gap: 4px; }
+.updbar[hidden] { display: none; }
+.updgo { background: none; border: 0; color: #fff; font: inherit; font-weight: 800; text-align: start; padding: 4px 0; cursor: pointer; }
+.updnote { font-size: 13px; opacity: .9; }
+.updx { position: absolute; top: 6px; inset-inline-end: 8px; background: none; border: 0; color: #fff; font-size: 18px; width: 32px; height: 32px; cursor: pointer; }
