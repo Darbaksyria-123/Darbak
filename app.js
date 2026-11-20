@@ -119,7 +119,7 @@
   Object.keys(F).forEach(function (k) { ROOT.setProperty('--c-' + k, F[k].c); });
   function svg(k, color, size) { return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + IC[k] + '</svg>'; }
   function tint(c) { return c; }
-  function circ(k, c) { var d = h('span', 'ci'); d.style.background = tint(c); d.innerHTML = svg(k, '#fff', 24); return d; }
+  function circ(k, c) { var d = h('span', 'ci'), i3 = window.ic3d && ic3d(k, 56); if (i3) { d.className = 'ci ci3'; d.innerHTML = i3; return d; } d.style.background = tint(c); d.innerHTML = svg(k, '#fff', 24); return d; }
 
   var GOV = [
     { n: 'دمشق', lat: 33.513, lon: 36.292 }, { n: 'ريف دمشق', lat: 33.60, lon: 36.55 }, { n: 'حلب', lat: 36.202, lon: 37.134 },
@@ -842,12 +842,13 @@
     if (c === 66 || c === 67) return 'مطر متجمّد'; if (c >= 71 && c <= 77) return 'ثلج'; if (c >= 80 && c <= 82) return 'زخات مطر';
     if (c === 85 || c === 86) return 'زخات ثلج'; if (c >= 95) return 'عاصفة رعدية'; return '—';
   }
-  function wicon(c, size, col) {
+  function wicon(c, size, col, night) {
     var sun = '<circle cx="12" cy="12" r="4.5" fill="#ffb300" stroke="none"/><g stroke="#ffb300" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></g>';
     var cloud = '<path d="M7 18a4 4 0 01.5-7.9A5 5 0 0117 12a3 3 0 01-.5 6z" fill="' + (col || '#cfd8dc') + '" stroke="none"/>';
     var inner;
-    if (c === 0) inner = sun;
-    else if (c <= 3) inner = '<g transform="translate(-3,-3) scale(.7)">' + sun + '</g>' + '<g transform="translate(2,2)">' + cloud + '</g>';
+    var moon = '<path d="M20.5 14.2A8.6 8.6 0 0 1 9.8 3.5a8.6 8.6 0 1 0 10.7 10.7z" fill="#f4f1dc" stroke="none"/><circle cx="18.5" cy="5" r=".9" fill="#fff" stroke="none"/><circle cx="21" cy="9" r=".6" fill="#fff" stroke="none"/>';
+    if (c === 0) inner = night ? moon : sun;
+    else if (c <= 3) inner = '<g transform="translate(-3,-3) scale(.7)">' + (night ? moon : sun) + '</g>' + '<g transform="translate(2,2)">' + cloud + '</g>';
     else if (c === 45 || c === 48) inner = '<g stroke="#90a4ae" stroke-width="2" stroke-linecap="round"><path d="M4 8h13M7 12h13M4 16h13M7 20h10"/></g>';
     else if (c >= 71 && c <= 77 || c === 85 || c === 86) inner = cloud + '<g stroke="#4fc3f7" stroke-width="2" stroke-linecap="round"><path d="M9 20v.1M13 21v.1M17 20v.1"/></g>';
     else if (c >= 95) inner = cloud + '<path d="M12 14l-2 4h3l-1 4" stroke="#ffb300" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
@@ -950,7 +951,7 @@
     if (!w) { box.appendChild(h('span', 'c', wxFail ? 'تعذّر تحميل الطقس' : 'عم نحمّل الطقس…')); box.appendChild(h('span', 's', wxFail ? 'تأكد من النت وجرّب مرة تانية' : '')); }
     else {
       var l = h('div'); l.appendChild(h('div', 't', (w.temp != null ? Math.round(w.temp) : '—') + '°')); l.appendChild(h('div', 'c', wcode(w.code))); box.appendChild(l);
-      var r = h('div'); r.innerHTML = wicon(w.code, 64); box.appendChild(r);
+      var r = h('div'); r.innerHTML = wicon(w.code, 64, null, hr < 6 || hr >= 19); box.appendChild(r);
       box.appendChild(h('span', 's', (w.me && myPlace() ? myPlace() + ' · ' : '') + gov + (visTxt(w.vis) ? ' · ' + visTxt(w.vis) : '') + ' · اضغط للتفاصيل'));
       if (w.al.length) { var al = h('div', 'al'); w.al.forEach(function (a) { al.appendChild(h('span', null, a.t)); }); box.appendChild(al); }
     }
@@ -970,9 +971,11 @@
     if (!lt.length) ul.appendChild(h('li', 'empty', 'ما في بلاغات فعّالة ' + scopeIn() + ' هلأ. إذا شفت شي على الطريق، اضغط + وبلّغ.'));
     lt.forEach(function (r) { ul.appendChild(rcard(r)); });
     var q = $('homeQuick'); q.textContent = '';
-    var QL = { fuel: 'محروقات', hospital: 'مشافي', pharmacy: 'صيدليات', restaurant: 'مطاعم', police: 'شرطة وأمن طرق', rest: 'استراحات', hotel: 'فنادق', airport: 'مطارات' };
+    var QL = { fuel: 'محروقات', hospital: 'مشافي', pharmacy: 'صيدليات', restaurant: 'مطاعم', police: 'شرطة', rest: 'استراحات', hotel: 'فنادق', airport: 'مطارات' };
     ['fuel', 'hospital', 'pharmacy', 'restaurant', 'police', 'rest', 'hotel', 'airport'].forEach(function (k) {
-      var b = h('button', 'qchip'); b.type = 'button'; b.innerHTML = svg(k, '#fff', 20); b.firstChild.style.background = F[k].c; b.appendChild(document.createTextNode(QL[k]));
+      var b = h('button', 'qchip'), i3 = window.ic3d && ic3d(k, 66); b.type = 'button';
+      if (i3) { b.className = 'qchip q3'; b.innerHTML = i3; } else { b.innerHTML = svg(k, '#fff', 20); b.firstChild.style.background = F[k].c; }
+      b.appendChild(document.createTextNode(QL[k]));
       b.addEventListener('click', function () { svcKind = k; go('svc'); }); q.appendChild(b);
     });
     updateBell();
@@ -1131,7 +1134,9 @@
     box.className = 'kinds' + (cur ? ' col' : '');
     function tile(g, big) {
       var k0 = g[2][0], b = h('button', big ? 'kbar' : null); b.type = 'button';
-      var ic = h('span', 'ki'); ic.style.background = F[k0].c; ic.innerHTML = svg(k0, '#fff', big ? 20 : 22); b.appendChild(ic);
+      var ic = h('span', 'ki'), i3 = window.ic3d && ic3d(k0, big ? 34 : 44);
+      if (i3) { ic.className = 'ki ki3'; ic.innerHTML = i3; } else { ic.style.background = F[k0].c; ic.innerHTML = svg(k0, '#fff', big ? 20 : 22); }
+      b.appendChild(ic);
       b.appendChild(h('span', 'kl', big ? (LANG === 'en' ? 'Type: ' : 'النوع: ') + trText(g[1]) : g[1]));
       if (big) b.appendChild(h('span', 'kchg', 'تغيير ▾'));
       b.addEventListener('click', function () { svcKind = big ? null : g[0]; svcFA = ''; renderSvc(); });
@@ -1268,8 +1273,26 @@
     row('info', 'الدعم والمعلومات', 'من نحن، الشروط، الخصوصية، تواصل', openInfo);
     row('info', 'إصدار دربك', 'الإصدار ' + APP_VER + (newVer ? ' · في تحديث جديد' : ''), function () { if (newVer) applyUpd(); else chkVer(true); }, !!newVer);
   }
+  /* ===== شريط الترحيب: بيظهر مرة وحدة لأي مستخدم جديد ===== */
+  function showWelcome() {
+    try { if (localStorage.getItem('dk_welcome')) return; } catch (e) { return; }
+    if ($('welcome')) return;
+    var bd = h('div', 'wl-bd'); bd.id = 'welcome';
+    var sh = h('div', 'wl-sh'); sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-modal', 'true');
+    function done() { try { localStorage.setItem('dk_welcome', '1'); } catch (e) {} bd.remove(); }
+    sh.appendChild(h('div', 'wl-grab'));
+    sh.appendChild(h('h3', null, 'دربك بيكبر بمساعدتك'));
+    sh.appendChild(h('p', null, 'ساعدنا وضيف أي خدمة قريبة منك (صيدلية، مخبز، كازية، معبر…) أو بلّغ عن أي حادث أو حاجز أو ازدحام بالطريق. دقيقة وحدة منك بتفيد كتير ناس.'));
+    function mode(m) { var sb = document.querySelector('#seg button[data-m="' + m + '"]'); if (sb) sb.click(); openAdd(); }
+    var a = h('button', 'btn wl-a', '＋ ضيف خدمة'); a.type = 'button'; a.onclick = function () { done(); mode('facility'); };
+    var b = h('button', 'btn wl-b', 'بلّغ عن شي'); b.type = 'button'; b.onclick = function () { done(); mode('report'); };
+    var c = h('button', 'wl-c', 'لاحقاً'); c.type = 'button'; c.onclick = done;
+    sh.appendChild(a); sh.appendChild(b); sh.appendChild(c); bd.appendChild(sh);
+    bd.addEventListener('click', function (e) { if (e.target === bd) done(); });
+    document.body.appendChild(bd);
+  }
   /* ===== رقم الإصدار وإشعار التحديث: APP_VER هون لازم يطابق v بملف version.json لما نكون محدّثين ===== */
-  var APP_VER = 1, newVer = 0, verNote = '';
+  var APP_VER = 4, newVer = 0, verNote = '';
   function applyUpd() { location.href = location.pathname + '?u=' + Date.now(); }
   function showUpd() {
     var b = $('updBar'); if (!b) { b = h('div', 'updbar'); b.id = 'updBar'; document.body.appendChild(b); }
@@ -1518,7 +1541,7 @@
     var isR = t === 'reports', key = isR ? it.type : it.kind;
     box.textContent = ''; box.hidden = false;
     var x = h('button', 'x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'إغلاق'); x.addEventListener('click', function () { selected = null; renderDetail(); });
-    var title = h('h3'); title.innerHTML = svg(key, 'var(--c-' + key + ')', 26); title.appendChild(document.createTextNode(isR ? (it.road ? trText(R[key].n) + ' · ' + it.road : R[key].n) : (it.name || F[key].n))); if (isR ? it.road : it.name) title.setAttribute('data-nt', '1');
+    var title = h('h3'); title.innerHTML = (window.ic3d && ic3d(key, 38)) || svg(key, 'var(--c-' + key + ')', 26); title.appendChild(document.createTextNode(isR ? (it.road ? trText(R[key].n) + ' · ' + it.road : R[key].n) : (it.name || F[key].n))); if (isR ? it.road : it.name) title.setAttribute('data-nt', '1');
     box.appendChild(x); box.appendChild(title);
     var tags = h('div', 'tags');
     if (!isR) tags.appendChild(h('span', 'tag', it.sub || F[key].n));
@@ -1724,7 +1747,7 @@
     Object.keys(obj).forEach(function (k) {
       if (addMode === 'facility' && !F[k].add) return;
       if (addMode === 'report' && k === 'radar') return;
-      var b = h('button'); b.type = 'button'; b.setAttribute('aria-pressed', chosen === k ? 'true' : 'false'); b.innerHTML = svg(k, obj[k].c, 26); b.appendChild(document.createTextNode(obj[k].n));
+      var b = h('button'); b.type = 'button'; b.setAttribute('aria-pressed', chosen === k ? 'true' : 'false'); b.innerHTML = (window.ic3d && ic3d(k, 44)) || svg(k, obj[k].c, 26); b.appendChild(document.createTextNode(obj[k].n));
       b.addEventListener('click', function () { chosen = k; autoKind = false; buildTypes(); $('fuelWrap').hidden = !(addMode === 'facility' && k === 'fuel'); updateSend(); });
       box.appendChild(b);
     });
@@ -2077,7 +2100,7 @@
   window.addEventListener('online', function () { setOnline(true); });
   window.addEventListener('offline', function () { setOnline(false); });
   drawPins(); go('home', { root: true });
-  addCurated(); refreshO(); plLoad(); loadBase(); loadCx(); chkVer(); setInterval(function () { if (!document.hidden) chkVer(); }, 3600000); loadChg(); setInterval(function () { if (!document.hidden) loadChg(); }, 900000); loadCountry(); loadWx(); setOsmStat();
+  addCurated(); refreshO(); plLoad(); loadBase(); loadCx(); chkVer(); setTimeout(showWelcome, 1800); setInterval(function () { if (!document.hidden) chkVer(); }, 3600000); loadChg(); setInterval(function () { if (!document.hidden) loadChg(); }, 900000); loadCountry(); loadWx(); setOsmStat();
   setTimeout(function () { $('splash').classList.add('out'); setTimeout(function () { $('splash').remove(); }, 400); }, 1100);
   $('splash').addEventListener('click', function () { this.classList.add('out'); });
   if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });

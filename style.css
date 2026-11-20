@@ -557,3 +557,35 @@ html,body{overflow-x:hidden;touch-action:pan-y}
 .updgo { background: none; border: 0; color: #fff; font: inherit; font-weight: 800; text-align: start; padding: 4px 0; cursor: pointer; }
 .updnote { font-size: 13px; opacity: .9; }
 .updx { position: absolute; top: 6px; inset-inline-end: 8px; background: none; border: 0; color: #fff; font-size: 18px; width: 32px; height: 32px; cursor: pointer; }
+
+/* ===== v26: أيقونات واقعية + شريط ترحيب ===== */
+.quick{align-items:stretch!important}
+.quick .qchip.q3{width:92px!important;min-height:108px!important;flex-direction:column!important;display:flex!important;align-items:center!important;justify-content:center!important;align-self:stretch;background:radial-gradient(ellipse at 50% 28%,#2b7a5c 0%,#123d2e 55%,#0a2118 100%)!important;border:1px solid rgba(255,255,255,.14)!important;color:#fff!important;border-radius:22px!important;padding:8px 2px 9px!important;gap:0!important;box-shadow:0 6px 14px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.22)!important;font-size:12.5px!important;font-weight:800!important}
+.quick .qchip.q3 svg.i3{width:66px!important;height:66px!important;padding:0!important;background:none!important;border-radius:0!important;box-shadow:none!important;filter:none!important;overflow:visible;margin:0 auto;flex:none!important}
+.kinds .ki3{background:none!important;box-shadow:none!important;width:46px!important;height:46px!important}
+.kinds .ki3 svg.i3{width:100%;height:100%;overflow:visible}
+.kinds .kbar .ki3{width:36px!important;height:36px!important}
+.types button svg.i3{width:46px;height:46px;overflow:visible}
+.wl-bd{position:fixed;inset:0;z-index:7000;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center}
+.wl-sh{width:100%;max-width:520px;background:#fff;border-radius:24px 24px 0 0;padding:12px 18px calc(18px + env(safe-area-inset-bottom,0px));text-align:center;box-shadow:0 -8px 30px rgba(0,0,0,.3);animation:wlup .28s ease-out}
+@keyframes wlup{from{transform:translateY(100%)}to{transform:none}}
+.wl-grab{width:42px;height:4px;border-radius:2px;background:#cfd6d2;margin:0 auto 12px}
+.wl-sh h3{margin:0 0 8px;font-size:20px;color:#0b1d12}
+.wl-sh p{margin:0 0 14px;font-size:14.5px;line-height:1.75;color:#33443a}
+.wl-sh .btn{display:block;width:100%;border-radius:14px;padding:13px;font-weight:800;font-size:15.5px;margin-top:8px;border:2px solid #0b8a5b;cursor:pointer}
+.wl-a{background:#0b8a5b;color:#fff}.wl-b{background:#fff;color:#0b8a5b}
+.wl-c{display:block;margin:12px auto 0;background:none;border:0;color:#5b6b61;font:inherit;font-weight:600;padding:8px 16px;cursor:pointer}
+
+.ci.ci3,.tile .ci.ci3,.rcard .ci.ci3,.tile.em .ci.ci3{background:none!important;filter:none!important;box-shadow:none!important;border-radius:0!important;width:56px!important;height:56px!important;display:block}
+.tile .ci.ci3 svg.i3,.rcard .ci.ci3 svg.i3,.ci.ci3 svg.i3{width:100%!important;height:100%!important;overflow:visible;filter:none!important}
+.rcard .ci.ci3{width:50px!important;height:50px!important;flex:none}
+.sheet h3 svg.i3,.det h3 svg.i3,h3 svg.i3{vertical-align:middle;margin-inline-end:6px}
+/* v27: تصغير أحجام الأيقونات */
+.ci.ci3,.tile .ci.ci3,.rcard .ci.ci3,.tile.em .ci.ci3{width:40px!important;height:40px!important}
+.rcard .ci.ci3{width:40px!important;height:40px!important}
+.quick .qchip.q3{width:82px!important;min-height:90px!important;padding:6px 2px 8px!important;font-size:12px!important}
+.quick .qchip.q3 svg.i3{width:52px!important;height:52px!important}
+.kinds .ki3{width:36px!important;height:36px!important}
+.kinds .kbar .ki3{width:30px!important;height:30px!important}
+.types button svg.i3{width:34px;height:34px}
+.types button{padding:8px 4px!important}
