@@ -589,3 +589,8 @@ html,body{overflow-x:hidden;touch-action:pan-y}
 .kinds .kbar .ki3{width:30px!important;height:30px!important}
 .types button svg.i3{width:34px;height:34px}
 .types button{padding:8px 4px!important}
+
+/* v29: دبابيس صغيرة بأيقونات واقعية */
+.p3{background:#fff!important;border:2.5px solid var(--pc,#0b8a5b)!important;border-radius:50%!important;transform:none!important;position:relative;display:grid;place-items:center;box-shadow:0 2px 5px rgba(0,0,0,.4)!important;box-sizing:border-box}
+.p3::after{content:"";position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);border:5px solid transparent;border-top:7px solid var(--pc,#0b8a5b);border-bottom:0}
+.p3 svg.i3{width:78%!important;height:78%!important;transform:none!important;overflow:visible}

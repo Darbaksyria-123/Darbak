@@ -200,6 +200,7 @@
     var m = String((e && (e.code || e.message)) || e || '');
     if (/login_required|jwt|not authenticated/i.test(m)) return 'سجّل دخولك أول';
     if (/confirm_email/.test(m)) return 'أكّد إيميلك أول (شيّك رسالة التأكيد بإيميلك)';
+    if (/photo_too_big/.test(m)) return 'الصورة كبيرة، جرّب صورة أصغر';
     if (/rate_limit/.test(m)) return 'وصلت للحد المسموح حالياً، جرّب بعد شوي';
     if (/duplicate/.test(m)) return 'في إضافة مشابهة قريبة منك. أكّدها بدل ما تكرّرها';
     if (/own_item/.test(m)) return 'ما بتقدر تصوّت على إضافتك';
@@ -251,13 +252,31 @@
   }
   function tokenReady() { return (!session || session.exp - Date.now() > 60000) ? Promise.resolve() : refreshSession(); }
 
+  /* fetch بمهلة: ما منخلّي طلب يعلّق للأبد */
+  function ftimeout(url, opts, ms) {
+    opts = opts || {}; var ctl = window.AbortController ? new AbortController() : null, to = ctl ? setTimeout(function () { ctl.abort(); }, ms || 15000) : 0;
+    if (ctl) opts = Object.assign({}, opts, { signal: ctl.signal });
+    return fetch(url, opts).then(function (r) { clearTimeout(to); return r; }, function (e) { clearTimeout(to); throw e; });
+  }
+  function sleep(ms) { return new Promise(function (ok) { setTimeout(ok, ms); }); }
+  /* القراءات (GET) بتعيد المحاولة مرتين بتأخير عشوائي لو الخادم مضغوط (429/5xx) أو النت متقطّع */
   function api(path, opts) {
+    var n = 0, isGet = !(opts && opts.method && opts.method !== 'GET');
+    function go() {
+      return api1(path, opts).catch(function (e) {
+        if (isGet && n < 2 && online && (!e.status || e.status === 429 || e.status >= 500)) { n++; return sleep(700 * n + Math.random() * 900).then(go); }
+        throw e;
+      });
+    }
+    return go();
+  }
+  function api1(path, opts) {
     opts = opts || {};
     return tokenReady().then(function () {
       var hd = { apikey: CFG.key, 'Content-Type': 'application/json' };
       var tok = session ? session.access : (/^eyJ/.test(CFG.key) ? CFG.key : null);   /* المفتاح الجديد (sb_publishable_…) مو JWT، فبيروح بـ apikey بس */
       if (tok) hd.Authorization = 'Bearer ' + tok;
-      return fetch(CFG.url + '/rest/v1/' + path, Object.assign({}, opts, { headers: Object.assign(hd, opts.headers || {}) }));
+      return ftimeout(CFG.url + '/rest/v1/' + path, Object.assign({}, opts, { headers: Object.assign(hd, opts.headers || {}) }), 20000);
     }).then(function (r) {
       if (r.status === 401 && session && !opts._retry) { return refreshSession().then(function () { return api(path, Object.assign({}, opts, { _retry: 1 })); }); }
       return r.text().then(function (t) {
@@ -316,17 +335,46 @@
   function persist() { if (!remote) { save(RK, reports); save(FK, facs); } }
   function initLocal() { reports = load(RK, null) || seedR(); facs = load(FK, null) || []; normFacs(); persist(); }
 
-  var refreshing = false;
-  function refresh() {
+  var refreshing = false, FEEDK = 'darbak.feed.v1', lastFull = 0, lastInc = 0, lastRAt = 0, lastFAt = 0, failN = 0, nextOk = 0;
+  function maxAt(a) { var m = 0; a.forEach(function (x) { if (x.at > m) m = x.at; }); return m; }
+  function feedSave() { save(FEEDK, { t: lastFull, r: reports.slice(0, 500), f: facs.slice(0, 1000) }); }
+  function feedCache() {   /* آخر نسخة محفوظة بالجهاز: بتظهر فوراً حتى لو الخادم مضغوط */
+    var c = load(FEEDK, null);
+    if (c && Array.isArray(c.r) && Array.isArray(c.f)) { reports = c.r; facs = c.f; normFacs(); lastFull = c.t || 0; lastRAt = maxAt(reports); lastFAt = maxAt(facs); return c.t || 0; }
+    return 0;
+  }
+  function mergeRows(base, add) {
+    if (!add.length) return base;
+    var m = {}, have = {}; add.forEach(function (x) { m[x.id] = x; });
+    var out = base.map(function (x) { have[x.id] = 1; return m[x.id] || x; });
+    add.forEach(function (x) { if (!have[x.id]) out.unshift(x); });
+    return out;
+  }
+  function refresh(force) {
     if (!remote) { renderAll(); return Promise.resolve(); }
     if (!online || refreshing) return Promise.resolve();
-    refreshing = true;
-    var since = Date.now() - 7 * 86400000;
-    return Promise.all([
-      api('reports?select=id,type,lat,lon,road,note,has_photo,at,yes,no&at=gte.' + since + '&order=at.desc&limit=500'),
-      api('facilities?select=id,kind,name,lat,lon,note,fuel,hours,at,yes,no&order=at.desc&limit=1000').catch(function () { return api('facilities?select=id,kind,name,lat,lon,note,fuel,at,yes,no&order=at.desc&limit=1000'); })
-    ]).then(function (x) { reports = Array.isArray(x[0]) ? x[0] : []; facs = Array.isArray(x[1]) ? x[1] : []; normFacs(); renderAll(); })
-      .catch(function (e) { if (online && !(e && e.handled)) toast('ما في اتصال بالخادم'); }).then(function () { refreshing = false; });
+    var now = Date.now();
+    if (!force && (now < nextOk || now - lastInc < 30000)) return Promise.resolve();
+    var full = !!force || !lastFull || now - lastFull > 600000;   /* كل 10 دقايق نسخة كاملة (للأصوات والحذف)، وبين هيك بس الجديد */
+    refreshing = true; lastInc = now;
+    var since = now - 7 * 86400000, rq, fq, fq2;
+    if (full) {
+      rq = 'reports?select=id,type,lat,lon,road,note,has_photo,at,yes,no&at=gte.' + since + '&order=at.desc&limit=500';
+      fq = 'facilities?select=id,kind,name,lat,lon,note,fuel,hours,at,yes,no&order=at.desc&limit=1000';
+      fq2 = 'facilities?select=id,kind,name,lat,lon,note,fuel,at,yes,no&order=at.desc&limit=1000';
+    } else {
+      rq = 'reports?select=id,type,lat,lon,road,note,has_photo,at,yes,no&at=gt.' + lastRAt + '&order=at.desc&limit=200';
+      fq = 'facilities?select=id,kind,name,lat,lon,note,fuel,hours,at,yes,no&at=gt.' + lastFAt + '&order=at.desc&limit=200';
+      fq2 = 'facilities?select=id,kind,name,lat,lon,note,fuel,at,yes,no&at=gt.' + lastFAt + '&order=at.desc&limit=200';
+    }
+    return Promise.all([api(rq), api(fq).catch(function (e) { if (e && e.status && e.status < 500 && e.status !== 429) return api(fq2); throw e; })]).then(function (x) {
+      var r = Array.isArray(x[0]) ? x[0] : [], f = Array.isArray(x[1]) ? x[1] : [];
+      if (full) { reports = r; facs = f; lastFull = Date.now(); } else { reports = mergeRows(reports, r); facs = mergeRows(facs, f); }
+      lastRAt = maxAt(reports); lastFAt = maxAt(facs); failN = 0; nextOk = 0; normFacs(); feedSave(); renderAll();
+    }).catch(function (e) {
+      failN++; nextOk = Date.now() + Math.min(300000, 15000 * Math.pow(2, failN));   /* تراجع تدريجي: ما منكبس على خادم تعبان */
+      if (online && !(e && e.handled) && failN === 1 && !reports.length && !facs.length) toast('ما في اتصال بالخادم');
+    }).then(function () { refreshing = false; });
   }
   function syncMine() {
     if (!remote || !session) return;
@@ -382,17 +430,17 @@
   function deleteItem(table, item) {
     var arr = table === 'reports' ? reports : facs, i = arr.indexOf(item); if (i > -1) arr.splice(i, 1); selected = null; renderAll();
     if (!remote) return persist();
-    rpc('delete_mine', { p_table: table, p_id: item.id }).catch(function () { toast('ما انحذف من الخادم'); refresh(); });
+    rpc('delete_mine', { p_table: table, p_id: item.id }).catch(function () { toast('ما انحذف من الخادم'); refresh(true); });
   }
   function editNote(table, item, note) {
     item.note = note; renderAll();
     if (!remote) return persist();
-    rpc('edit_mine', { p_table: table, p_id: item.id, p_note: note }).catch(function () { toast('ما انحفظ التعديل على الخادم'); refresh(); });
+    rpc('edit_mine', { p_table: table, p_id: item.id, p_note: note }).catch(function () { toast('ما انحفظ التعديل على الخادم'); refresh(true); });
   }
   function editName(item, name) {
     item.name = name; renderAll();
     if (!remote) return persist();
-    rpc('edit_facility_name', { p_id: item.id, p_name: name }).catch(function () { toast('ما انحفظ تعديل الاسم على الخادم'); refresh(); });
+    rpc('edit_facility_name', { p_id: item.id, p_name: name }).catch(function () { toast('ما انحفظ تعديل الاسم على الخادم'); refresh(true); });
   }
   function getPhoto(it) { return safePhoto(it.photo || photoCache[it.id]); }
   function loadPhoto(it, then) {
@@ -413,13 +461,13 @@
     if (/Failed to fetch|NetworkError/i.test(m)) return 'ما في اتصال بالإنترنت';
     return 'ما نجحت العملية، جرّب مرة تانية';
   }
-  function afterLogin() { syncMine(); refresh(); renderAll(); }
+  function afterLogin() { syncMine(); refresh(true); renderAll(); }
   function signOut() {
     var t = session && session.access; if (t) authReq('POST', 'logout', null, t).catch(function () {});
     clearSession(); profile.name = ''; save(PK, profile); renderAll(); toast('سجّلت خروج');
   }
   function deleteAccount() {
-    rpc('delete_my_account').then(function () { clearSession(); refresh(); renderAll(); toast('انحذف حسابك مع كل إضافاتك'); }).catch(function (e) { toast(errMsg(e)); });
+    rpc('delete_my_account').then(function () { clearSession(); refresh(true); renderAll(); toast('انحذف حسابك مع كل إضافاتك'); }).catch(function (e) { toast(errMsg(e)); });
   }
   var recoveryTok = null;
   function handleAuthHash() {
@@ -530,9 +578,14 @@
     if (on) { map.removeLayer(osmTiles); sat.addTo(map); satLabels.addTo(map); } else { map.removeLayer(sat); map.removeLayer(satLabels); osmTiles.addTo(map); }
   });
 
-  function pinR(type) { return L.divIcon({ className: '', iconSize: [28, 28], iconAnchor: [14, 28], html: '<div class="pin" style="background:var(--c-' + type + ')">' + svg(type, '#fff', 14) + '</div>' }); }
-  function pinF(kind) { return L.divIcon({ className: '', iconSize: [26, 26], iconAnchor: [13, 13], html: '<div class="fpin" style="background:var(--c-' + kind + ')">' + svg(kind, '#fff', 14) + '</div>' }); }
-  function pinO(kind) { return L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 11], html: '<div class="opin" style="background:var(--c-' + kind + ')">' + svg(kind, '#fff', 13) + '</div>' }); }
+  /* دبابيس الخريطة: أيقونة واقعية صغيرة بدائرة بيضا وإطار بلون الفئة وذيل صغير. الذيل هو نقطة الموقع */
+  function pin3(cls, sz, kind, ic) {
+    var i3 = window.ic3d && ic3d(kind, ic);
+    return L.divIcon({ className: '', iconSize: [sz, sz + 8], iconAnchor: [sz / 2, sz + 8], html: '<div class="' + cls + (i3 ? ' p3' : '') + '" style="--pc:var(--c-' + kind + ');' + (i3 ? 'width:' + sz + 'px;height:' + sz + 'px' : '') + '">' + (i3 || svg(kind, '#fff', 14)) + '</div>' });
+  }
+  function pinR(type) { return pin3('pin', 30, type, 22); }
+  function pinF(kind) { return pin3('fpin', 26, kind, 19); }
+  function pinO(kind) { return pin3('opin', 22, kind, 16); }
 
   function refreshO() {
     layerO.clearLayers(); var arr = [];
@@ -745,6 +798,7 @@
       });
       return items;
     }
+    function viaOvp() {
     chain = chain.then(function () {
       return ovp('[out:json][timeout:90];area["ISO3166-1"="SY"][admin_level=2]->.a;node(area.a)' + PQ + ';out body;').then(function (j) {
         if (j.elements && j.elements.length) return j;
@@ -754,6 +808,11 @@
         PL = { grid: {}, n: 0 }; items.forEach(plAdd); save('darbak.places.v1', { ts: Date.now(), items: items }); renderScreen(cur);
       }).catch(function () {});
     });
+    }
+    getStatic('places.json').then(function (j) {
+      var items = j && j.items; if (!Array.isArray(items) || items.length < 100) throw new Error('places');
+      PL = { grid: {}, n: 0 }; items.forEach(plAdd); save('darbak.places.v1', { ts: Date.now(), items: items }); renderScreen(cur);
+    }).catch(viaOvp);
   }
   function plNear(p) {
     var ci = Math.floor(p.lat * 10), cj = Math.floor(p.lon * 10), best = null, bs = Infinity, bd = 0;
@@ -784,8 +843,12 @@
       if (ch) { addCurated(); refreshO(); }
     }).catch(function () {});
   }
+  /* ملفات ثابتة على GitHub Pages (CDN): بدل ما كل مستخدم يسأل Overpass. المفتاح بيتغيّر كل 3 ساعات */
+  function k3() { return Math.floor(Date.now() / 10800000); }
+  var staticOk = false;
+  function getStatic(path) { return ftimeout(path + '?d=' + k3(), null, 20000).then(function (r) { if (!r.ok) throw new Error('static'); return r.json(); }); }
   function loadBase() {
-    return fetch('base.json?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('base'); return r.json(); }).then(function (b) {
+    return getStatic('base.json').then(function (b) {
       if (!b || !Array.isArray(b.elements)) return;
       b.elements.forEach(function (e) { var pt = elPt(e); if (!okGeo(pt[0], pt[1], e.tags)) return; var p = toPoi(e); if (p && !osm[p.id]) { p.base = 1; osm[p.id] = p; } });
       var tb = b.osm_base && Date.parse(b.osm_base); if (tb && tb > osmBase) { osmBase = tb; stampOsm(); }
@@ -796,6 +859,13 @@
     var c = load('darbak.osm.country.v5', null);
     if (c && c.items && Date.now() - c.ts < 12 * 3600 * 1000) { c.items.forEach(function (p) { if (!p.cur && inPoly(p.lat, p.lon)) osm[p.id] = p; }); addCurated(); countryState = 'done'; refreshO(); setOsmStat(); return; }
     countryState = 'loading'; setOsmStat();
+    getStatic('core.json').then(function (j) {
+      if (!j || !Array.isArray(j.elements) || j.elements.length < 20) throw new Error('core');
+      staticOk = true; addOsm(j.elements); countryState = 'done'; osmErr = false;
+      save('darbak.osm.country.v5', { ts: Date.now(), items: Object.keys(osm).map(function (k) { return osm[k]; }).filter(function (p) { return !p.cur && !p.base; }) });
+      refreshO(); setOsmStat(); renderScreen(cur);
+    }).catch(viaOvp);
+    function viaOvp() {
     chain = chain.then(function () {
       return getPois(SYR, P_COUNTRY).then(function (j) {
         addOsm(j.elements || []); countryState = 'done'; osmErr = false;
@@ -812,6 +882,7 @@
         setOsmStat();
       });
     });
+    }
   }
   function cellsInView() {
     var b = map.getBounds(), la0 = Math.max(32.2, b.getSouth()), la1 = Math.min(37.4, b.getNorth()), lo0 = Math.max(35.6, b.getWest()), lo1 = Math.min(42.4, b.getEast());
@@ -825,9 +896,14 @@
     cellsInView().forEach(function (c) {
       var k = c[0] + ',' + c[1]; if (cellState[k]) return; cellState[k] = 'loading';
       var bb = [c[0] * .5, c[1] * .5, c[0] * .5 + .5, c[1] * .5 + .5];
-      chain = chain.then(function () {
-        return getPois(bb, P_CELL).then(function (j) { addOsm(j.elements || []); cellState[k] = 'done'; osmErr = false; refreshO(); setOsmStat(); })
-          .catch(function () { delete cellState[k]; osmErr = true; setOsmStat(); });
+      getStatic('cells/' + c[0] + '_' + c[1] + '.json').then(function (j) {
+        if (!j || !Array.isArray(j.elements)) throw new Error('cell');
+        staticOk = true; addOsm(j.elements); cellState[k] = 'done'; osmErr = false; refreshO(); setOsmStat();
+      }).catch(function () {   /* الملف الثابت مو موجود: احتياطي Overpass (لما يكون الملف الثابت شغّال ما منوصل لهون) */
+        chain = chain.then(function () {
+          return getPois(bb, P_CELL).then(function (j) { addOsm(j.elements || []); cellState[k] = 'done'; osmErr = false; refreshO(); setOsmStat(); })
+            .catch(function () { delete cellState[k]; osmErr = true; setOsmStat(); });
+        });
       });
     });
     setOsmStat();
@@ -859,11 +935,15 @@
   function loadWx() {
     var u = 'https://api.open-meteo.com/v1/forecast?latitude=' + GOV.map(function (g) { return g.lat; }).join(',') + '&longitude=' + GOV.map(function (g) { return g.lon; }).join(',') +
       '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=visibility&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
-    return fetch(u).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
+    var WK = 'darbak.wx.v2', c = load(WK, null);
+    function apply(j) {
       var arr = Array.isArray(j) ? j : [j];
       wx = arr.map(function (d, i) { return mkWx(d, GOV[i].n, GOV[i].lat, GOV[i].lon); });
-      drawWx(); renderScreen(cur); updateBell();
-    }).catch(function () { wxFail = true; renderScreen(cur); });
+      wxFail = false; drawWx(); renderScreen(cur); updateBell();
+    }
+    if (c && c.j && Date.now() - c.t < 1800000) { try { apply(c.j); return Promise.resolve(); } catch (e) {} }   /* كاش 30 دقيقة: ما منطلب الطقس كل مرة */
+    return ftimeout(u, null, 15000).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) { apply(j); save(WK, { t: Date.now(), j: j }); })
+      .catch(function () { if (c && c.j) { try { apply(c.j); return; } catch (e) {} } wxFail = true; renderScreen(cur); });   /* لو فشل: بنعرض آخر طقس محفوظ */
   }
   var wxFail = false, wxMe = null, geoState = '';
   function mkWx(d, gname, glat, glon) {
@@ -879,9 +959,12 @@
   }
   var WXQ = '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=visibility&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
   function loadMyWx(ll) {
-    return fetch('https://api.open-meteo.com/v1/forecast?latitude=' + ll.lat.toFixed(3) + '&longitude=' + ll.lon.toFixed(3) + WXQ).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
-      wxMe = mkWx(Array.isArray(j) ? j[0] : j, govOf(ll), ll.lat, ll.lon); wxMe.me = true; renderScreen(cur); updateBell();
-    }).catch(function () {});
+    var MK = 'darbak.wxme.v2', c = load(MK, null), key = ll.lat.toFixed(2) + ',' + ll.lon.toFixed(2);
+    function apply(j) { wxMe = mkWx(Array.isArray(j) ? j[0] : j, govOf(ll), ll.lat, ll.lon); wxMe.me = true; renderScreen(cur); updateBell(); }
+    if (c && c.k === key && c.j && Date.now() - c.t < 1800000) { try { apply(c.j); return Promise.resolve(); } catch (e) {} }
+    return ftimeout('https://api.open-meteo.com/v1/forecast?latitude=' + ll.lat.toFixed(3) + '&longitude=' + ll.lon.toFixed(3) + WXQ, null, 15000).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (j) {
+      apply(j); save(MK, { t: Date.now(), k: key, j: j });
+    }).catch(function () { if (c && c.k === key && c.j) { try { apply(c.j); } catch (e) {} } });
   }
   function myPlace() { if (!me) return ''; var r = PL.n ? plNear(me) : null; if (!r || r.d > 2500) return ''; return (LANG === 'en' && r.a[4]) ? r.a[4] : r.a[2]; }
   function wxOf(g) { if (wxMe && wxMe.gov === g) return wxMe; for (var i = 0; i < wx.length; i++) if (wx[i].gov === g) return wx[i]; return null; }
@@ -986,7 +1069,7 @@
   function updMark() { var m = 0; chg.forEach(function (x) { if (x.at > m) m = x.at; }); try { if (m) localStorage.setItem(UPD_KEY, String(m)); } catch (e) {} }
   function updUnread() { var s = updSeen(); return chg.filter(function (x) { return x.at > s && inScope(x); }).length; }
   function loadChg() {
-    return fetch('changes.json?v=' + Date.now(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('chg'); return r.json(); }).then(function (d) {
+    return ftimeout('changes.json?v=' + Math.floor(Date.now() / 900000), null, 15000).then(function (r) { if (!r.ok) throw new Error('chg'); return r.json(); }).then(function (d) {
       var out = [];
       ((d && d.items) || []).forEach(function (x) {
         if (!x || !x.tags || x.lat == null || x.lon == null || !UPD_TAG[x.c] || !okGeo(x.lat, x.lon, x.tags)) return;
@@ -1091,10 +1174,11 @@
     if (loading) ul.appendChild(h('li', 'sm', 'عم نبحث بسوريا…'));
     else if (!list.length) ul.appendChild(h('li', 'sm', 'ما لقينا نتيجة. جرّب اسم تاني.'));
   }
+  var NOM = {};
   function searchRemote(q, seq, base) {
     if (!online) return;
     var u = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&countrycodes=sy&accept-language=ar&bounded=1&viewbox=35.6,37.4,42.4,32.2&q=' + encodeURIComponent(q);
-    fetch(u).then(function (r) { return r.json(); }).then(function (a) {
+    (NOM[q] ? Promise.resolve(NOM[q]) : ftimeout(u, null, 10000).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (a) { NOM[q] = a; return a; })).then(function (a) {
       if (seq !== mqSeq) return;
       var extra = (a || []).filter(function (x) { return inSyria({ lat: +x.lat, lng: +x.lon }); }).map(function (x) {
         var parts = String(x.display_name || '').split('،'); var nm = (x.name || parts[0] || '').trim();
@@ -1292,7 +1376,7 @@
     document.body.appendChild(bd);
   }
   /* ===== رقم الإصدار وإشعار التحديث: APP_VER هون لازم يطابق v بملف version.json لما نكون محدّثين ===== */
-  var APP_VER = 4, newVer = 0, verNote = '';
+  var APP_VER = 6, newVer = 0, verNote = '';
   function applyUpd() { location.href = location.pathname + '?u=' + Date.now(); }
   function showUpd() {
     var b = $('updBar'); if (!b) { b = h('div', 'updbar'); b.id = 'updBar'; document.body.appendChild(b); }
@@ -1302,7 +1386,7 @@
     var x = h('button', 'updx', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'إغلاق'); x.onclick = function () { b.hidden = true; try { sessionStorage.setItem('dk_updx', newVer + ''); } catch (e) {} }; b.appendChild(x);
   }
   function chkVer(manual) {
-    fetch('version.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    ftimeout('version.json?t=' + Math.floor(Date.now() / 600000), null, 15000).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
       if (!j || typeof j.v !== 'number') { if (manual) toast('تعذّر فحص التحديث، جرّب لاحقاً'); return; }
       if (j.v > APP_VER) {
         newVer = j.v; verNote = typeof j.notes === 'string' ? j.notes.slice(0, 120) : '';
@@ -1584,7 +1668,7 @@
   function routeTo(lat, lon) {
     function run() {
       var url = 'https://router.project-osrm.org/route/v1/driving/' + me.lon + ',' + me.lat + ';' + lon + ',' + lat + '?overview=full&geometries=geojson';
-      fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      ftimeout(url, null, 15000).then(function (r) { return r.json(); }).then(function (j) {
         if (!j.routes || !j.routes.length) throw 0;
         var rt = j.routes[0]; clearRoute();
         routeLine = L.polyline(rt.geometry.coordinates.map(function (c) { return [c[1], c[0]]; }), { color: '#1565c0', weight: 6, opacity: .88 }).addTo(map);
@@ -2036,7 +2120,7 @@
   function openInfo() { renderInfo(); loadStats(); showSheet('infoSheet'); }
   var sid = (function () { try { var s = sessionStorage.getItem('darbak.sid'); if (!s) { s = uid(); sessionStorage.setItem('darbak.sid', s); } return s; } catch (e) { return uid(); } })();
   function pingVisit(first) { if (remote) api('rpc/visit_ping', { method: 'POST', body: JSON.stringify({ p_sid: sid, p_new: !!first }) }).catch(function () {}); }
-  if (remote) { pingVisit(true); setInterval(function () { if (!document.hidden) pingVisit(false); }, 60000); }
+  if (remote) { setTimeout(function () { pingVisit(true); }, 2000 + Math.random() * 3000); (function pt() { setTimeout(function () { if (!document.hidden) pingVisit(false); pt(); }, 300000 + Math.random() * 60000); })(); }
 
   /* ===== ربط الواجهة وتشغيل ===== */
   document.querySelectorAll('#nav .tab').forEach(function (b) {
@@ -2092,7 +2176,12 @@
     d.classList.remove('trp');
   })();
   renderChips();
-  if (remote) { handleAuthHash(); refresh(); syncMine(); setInterval(function () { if (!document.hidden) refresh(); }, 15000); document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); }); }
+  if (remote) {
+    handleAuthHash(); feedCache(); syncMine();
+    setTimeout(function () { refresh(); }, Math.random() * 1500);   /* توزيع الطلبات وقت الذروة */
+    (function tick() { setTimeout(function () { if (!document.hidden) refresh(); tick(); }, 60000 + Math.random() * 30000); })();
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+  }
   else { initLocal(); }
   /* بدون نت: بنظهر تنبيه وبنمنع الإضافة (التطبيق بيشتغل أونلاين بس) */
   function setOnline(v) { online = v; $('offline').hidden = v; if (v) { refresh(); loadWx(); } }
