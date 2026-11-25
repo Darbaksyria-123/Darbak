@@ -1,0 +1,36 @@
+name: نسخة محلية للخريطة
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: نزّل الملفات
+        run: |
+          set -e
+          mkdir -p vendor/images
+          L=https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist
+          M=https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist
+          curl -fsSL $L/leaflet.js -o vendor/leaflet.js
+          curl -fsSL $L/leaflet.css -o vendor/leaflet.css
+          for f in layers.png layers-2x.png marker-icon.png marker-icon-2x.png marker-shadow.png; do curl -fsSL $L/images/$f -o vendor/images/$f; done
+          curl -fsSL $M/leaflet.markercluster.js -o vendor/markercluster.js
+          curl -fsSL $M/MarkerCluster.css -o vendor/MarkerCluster.css
+          curl -fsSL $M/MarkerCluster.Default.css -o vendor/MarkerCluster.Default.css
+          grep -q "leaflet" vendor/leaflet.js && grep -q "markerClusterGroup" vendor/markercluster.js
+          ls -la vendor
+      - name: احفظ
+        run: |
+          git config user.name "darbak-bot"
+          git config user.email "darbak-bot@users.noreply.github.com"
+          git add vendor
+          git diff --cached --quiet && echo "ما في تغيير" && exit 0
+          git commit -m "نسخة محلية لمكتبات الخريطة"
+          git push
