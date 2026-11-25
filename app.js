@@ -261,7 +261,7 @@
   function sleep(ms) { return new Promise(function (ok) { setTimeout(ok, ms); }); }
   /* القراءات (GET) بتعيد المحاولة مرتين بتأخير عشوائي لو الخادم مضغوط (429/5xx) أو النت متقطّع */
   function api(path, opts) {
-    var n = 0, isGet = !(opts && opts.method && opts.method !== 'GET');
+    var n = 0, isGet = !(opts && opts.method && opts.method !== 'GET') || !!(opts && opts._r);
     function go() {
       return api1(path, opts).catch(function (e) {
         if (isGet && n < 2 && online && (!e.status || e.status === 429 || e.status >= 500)) { n++; return sleep(700 * n + Math.random() * 900).then(go); }
@@ -335,7 +335,7 @@
   function persist() { if (!remote) { save(RK, reports); save(FK, facs); } }
   function initLocal() { reports = load(RK, null) || seedR(); facs = load(FK, null) || []; normFacs(); persist(); }
 
-  var refreshing = false, FEEDK = 'darbak.feed.v1', lastFull = 0, lastInc = 0, lastRAt = 0, lastFAt = 0, failN = 0, nextOk = 0;
+  var noFeedRpc = false, lastAct = Date.now(), refreshing = false, FEEDK = 'darbak.feed.v1', lastFull = 0, lastInc = 0, lastRAt = 0, lastFAt = 0, failN = 0, nextOk = 0;
   function maxAt(a) { var m = 0; a.forEach(function (x) { if (x.at > m) m = x.at; }); return m; }
   function feedSave() { save(FEEDK, { t: lastFull, r: reports.slice(0, 500), f: facs.slice(0, 1000) }); }
   function feedCache() {   /* آخر نسخة محفوظة بالجهاز: بتظهر فوراً حتى لو الخادم مضغوط */
@@ -354,10 +354,10 @@
     if (!remote) { renderAll(); return Promise.resolve(); }
     if (!online || refreshing) return Promise.resolve();
     var now = Date.now();
-    if (!force && (now < nextOk || now - lastInc < 30000)) return Promise.resolve();
+    if (!force && (now < nextOk || now - lastInc < 60000)) return Promise.resolve();
     var full = !!force || !lastFull || now - lastFull > 600000;   /* كل 10 دقايق نسخة كاملة (للأصوات والحذف)، وبين هيك بس الجديد */
     refreshing = true; lastInc = now;
-    var since = now - 7 * 86400000, rq, fq, fq2;
+    var since = now - 7 * 86400000, rq, fq, fq2, req;
     if (full) {
       rq = 'reports?select=id,type,lat,lon,road,note,has_photo,at,yes,no&at=gte.' + since + '&order=at.desc&limit=500';
       fq = 'facilities?select=id,kind,name,lat,lon,note,fuel,hours,at,yes,no&order=at.desc&limit=1000';
@@ -367,7 +367,14 @@
       fq = 'facilities?select=id,kind,name,lat,lon,note,fuel,hours,at,yes,no&at=gt.' + lastFAt + '&order=at.desc&limit=200';
       fq2 = 'facilities?select=id,kind,name,lat,lon,note,fuel,at,yes,no&at=gt.' + lastFAt + '&order=at.desc&limit=200';
     }
-    return Promise.all([api(rq), api(fq).catch(function (e) { if (e && e.status && e.status < 500 && e.status !== 429) return api(fq2); throw e; })]).then(function (x) {
+    /* طلب واحد (دالة feed) بدل طلبين؛ لو الدالة مو موجودة بالقاعدة بنرجع للطريقة القديمة تلقائياً */
+    function twoCalls() { return Promise.all([api(rq), api(fq).catch(function (e) { if (e && e.status && e.status < 500 && e.status !== 429) return api(fq2); throw e; })]); }
+    if (noFeedRpc) req = twoCalls();
+    else req = api('rpc/feed', { method: 'POST', _r: 1, body: JSON.stringify({ p_rat: lastRAt, p_fat: lastFAt, p_full: full }) }).then(function (j) {
+      if (!j || !Array.isArray(j.r) || !Array.isArray(j.f)) throw { status: 400 };
+      return [j.r, j.f];
+    }).catch(function (e) { if (e && e.status && e.status >= 400 && e.status < 500 && e.status !== 429) { noFeedRpc = true; return twoCalls(); } throw e; });
+    return req.then(function (x) {
       var r = Array.isArray(x[0]) ? x[0] : [], f = Array.isArray(x[1]) ? x[1] : [];
       if (full) { reports = r; facs = f; lastFull = Date.now(); } else { reports = mergeRows(reports, r); facs = mergeRows(facs, f); }
       lastRAt = maxAt(reports); lastFAt = maxAt(facs); failN = 0; nextOk = 0; normFacs(); feedSave(); renderAll();
@@ -932,7 +939,9 @@
     return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" aria-hidden="true">' + inner + '</svg>';
   }
   function visTxt(v) { return v == null ? '' : v >= 5000 ? 'الرؤية جيدة' : v >= 1000 ? 'الرؤية متوسطة' : 'الرؤية ضعيفة'; }
-  function loadWx() {
+  var wxP = null, wxMeP = null, wxMeKey = '';
+  function loadWx() { if (wxP) return wxP; wxP = loadWx_(); var done = function () { wxP = null; }; wxP.then(done, done); return wxP; }
+  function loadWx_() {
     var u = 'https://api.open-meteo.com/v1/forecast?latitude=' + GOV.map(function (g) { return g.lat; }).join(',') + '&longitude=' + GOV.map(function (g) { return g.lon; }).join(',') +
       '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=visibility&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
     var WK = 'darbak.wx.v2', c = load(WK, null);
@@ -958,7 +967,8 @@
         return { gov: gname, lat: glat, lon: glon, temp: temp, feels: c.apparent_temperature, hum: c.relative_humidity_2m, code: code, wind: c.wind_speed_10m, vis: vv, al: al, days: days };
   }
   var WXQ = '&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&hourly=visibility&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=5&timezone=auto';
-  function loadMyWx(ll) {
+  function loadMyWx(ll) { var k = ll.lat.toFixed(2) + ',' + ll.lon.toFixed(2); if (wxMeP && wxMeKey === k) return wxMeP; wxMeKey = k; var p = wxMeP = loadMyWx_(ll); var done = function () { if (wxMeP === p) wxMeP = null; }; p.then(done, done); return p; }
+  function loadMyWx_(ll) {
     var MK = 'darbak.wxme.v2', c = load(MK, null), key = ll.lat.toFixed(2) + ',' + ll.lon.toFixed(2);
     function apply(j) { wxMe = mkWx(Array.isArray(j) ? j[0] : j, govOf(ll), ll.lat, ll.lon); wxMe.me = true; renderScreen(cur); updateBell(); }
     if (c && c.k === key && c.j && Date.now() - c.t < 1800000) { try { apply(c.j); return Promise.resolve(); } catch (e) {} }
@@ -1376,7 +1386,7 @@
     document.body.appendChild(bd);
   }
   /* ===== رقم الإصدار وإشعار التحديث: APP_VER هون لازم يطابق v بملف version.json لما نكون محدّثين ===== */
-  var APP_VER = 6, newVer = 0, verNote = '';
+  var APP_VER = 7, newVer = 0, verNote = '';
   function applyUpd() { location.href = location.pathname + '?u=' + Date.now(); }
   function showUpd() {
     var b = $('updBar'); if (!b) { b = h('div', 'updbar'); b.id = 'updBar'; document.body.appendChild(b); }
@@ -2179,7 +2189,8 @@
   if (remote) {
     handleAuthHash(); feedCache(); syncMine();
     setTimeout(function () { refresh(); }, Math.random() * 1500);   /* توزيع الطلبات وقت الذروة */
-    (function tick() { setTimeout(function () { if (!document.hidden) refresh(); tick(); }, 60000 + Math.random() * 30000); })();
+    ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function (ev) { window.addEventListener(ev, function () { var idle = Date.now() - lastAct > 600000; lastAct = Date.now(); if (idle) refresh(); }, { passive: true, capture: true }); });
+    (function tick() { setTimeout(function () { if (!document.hidden && Date.now() - lastAct < 600000) refresh(); tick(); }, 150000 + Math.random() * 60000); })();   /* كل 2.5–3.5 دقيقة، وبس لو المستخدم فعلاً عم يستعمل التطبيق */
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
   }
   else { initLocal(); }
@@ -2190,7 +2201,8 @@
   window.addEventListener('offline', function () { setOnline(false); });
   drawPins(); go('home', { root: true });
   addCurated(); refreshO(); plLoad(); loadBase(); loadCx(); chkVer(); setTimeout(showWelcome, 1800); setInterval(function () { if (!document.hidden) chkVer(); }, 3600000); loadChg(); setInterval(function () { if (!document.hidden) loadChg(); }, 900000); loadCountry(); loadWx(); setOsmStat();
-  setTimeout(function () { $('splash').classList.add('out'); setTimeout(function () { $('splash').remove(); }, 400); }, 1100);
-  $('splash').addEventListener('click', function () { this.classList.add('out'); });
-  if ('serviceWorker' in navigator && location.protocol === 'https:') window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  window.__dkReady = 1;
+  setTimeout(function () { var sp = $('splash'); if (!sp) return; sp.classList.add('out'); setTimeout(function () { if (sp.parentNode) sp.remove(); }, 400); }, 1100);
+  if ($('splash')) $('splash').addEventListener('click', function () { this.classList.add('out'); });
+  if ('serviceWorker' in navigator && location.protocol === 'https:') { var regSW = function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }; if (document.readyState === 'complete') regSW(); else window.addEventListener('load', regSW); }
 })();
