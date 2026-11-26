@@ -5,6 +5,7 @@ name: تحديث الأساس
 on:
   schedule:
     - cron: '17 3 * * *'
+    - cron: '41 13 * * *'
   workflow_dispatch:
 
 permissions:
@@ -23,6 +24,7 @@ jobs:
           python3 - <<'PY'
           import json, os, re, sys, time, urllib.parse, urllib.request
 
+          T0 = time.time()
           SINCE = '2025-01-01T00:00:00Z'
           QUERY = ('[out:json][timeout:180];area["ISO3166-1"="SY"]->.a;('
                    'nwr(area.a)["amenity"~"^(hospital|pharmacy|fuel|restaurant|cafe|fast_food|police)$"](newer:"%s");'
@@ -33,7 +35,17 @@ jobs:
                    ');out center meta;') % ((SINCE,) * 5)
           ENDPOINTS = ['https://overpass-api.de/api/interpreter',
                        'https://overpass.kumi.systems/api/interpreter',
-                       'https://overpass.private.coffee/api/interpreter']
+                       'https://overpass.private.coffee/api/interpreter',
+                       'https://maps.mail.ru/osm/tools/overpass/api/interpreter']
+
+          if os.environ.get('GITHUB_EVENT_NAME') == 'schedule':
+              try:
+                  ob = json.load(open('base.json', encoding='utf-8')).get('osm_base', '')
+                  age = time.time() - time.mktime(time.strptime(ob[:19], '%Y-%m-%dT%H:%M:%S')) + time.timezone
+                  if 0 <= age < 10 * 3600:
+                      print('آخر تحديث ناجح قبل %.1f ساعة، منتخطّى' % (age / 3600)); raise SystemExit(0)
+              except SystemExit: raise
+              except Exception as e: print('فحص الحداثة تعذّر:', e)
 
           def fetch():
               src = os.environ.get('SRC_FILE')
@@ -42,10 +54,11 @@ jobs:
               last = None
               for attempt in range(2):
                   for u in ENDPOINTS:
+                      if time.time() - T0 > 1200: break
                       try:
                           req = urllib.request.Request(u, data=urllib.parse.urlencode({'data': QUERY}).encode(),
                                                        headers={'User-Agent': 'darbak-base-updater/1.0 (github actions)'})
-                          with urllib.request.urlopen(req, timeout=240) as r:
+                          with urllib.request.urlopen(req, timeout=200) as r:
                               return json.load(r)
                       except Exception as e:
                           last = e
@@ -55,7 +68,7 @@ jobs:
 
           d = fetch()
           els = d.get('elements') or []
-          if len(els) < 300:      # حماية: ما منكتب فوق الملف إذا الرد ناقص
+          if len(els) < 300:
               raise SystemExit('عدد العناصر قليل (%d)، ما منحدّث' % len(els))
 
           KEEP = {'aerodrome', 'aerodrome:type', 'aeroway', 'amenity', 'barrier', 'contact:mobile', 'contact:phone',
@@ -72,7 +85,6 @@ jobs:
               else:
                   continue
               out.append(o)
-          # ---- فلتر الحدود: ما منحتفظ بأي خدمة برّا سوريا (نفس منطق التطبيق) ----
           import math
           SYR_POLY = [[35.93,35.9],[35.96,36.06],[36.08,36.22],[36.22,36.52],[36.55,36.66],[36.64,36.98],[36.66,37.3],[36.76,37.6],[36.85,38.0],[36.95,38.3],[36.8,38.8],[36.72,39.25],[36.82,39.7],[36.86,40.1],[37.0,40.6],[37.063,41.1],[37.065,41.6],[37.25,42.0],[37.27,42.4],[36.82,42.18],[36.6,41.85],[36.33,41.35],[35.85,41.18],[35.3,41.0],[34.75,40.95],[34.4,41.0],[34.0,40.15],[33.7,39.5],[33.37,38.8],[32.32,37.2],[32.31,36.75],[32.4,36.4],[32.585,36.02],[32.65,35.85],[32.7,35.65],[32.75,35.72],[33.05,35.78],[33.25,35.8],[33.43,35.85],[33.65,35.95],[33.85,36.3],[34.0,36.45],[34.2,36.52],[34.35,36.55],[34.55,36.52],[34.62,36.3],[34.62,35.93],[34.9,35.82],[35.3,35.72],[35.62,35.74],[35.85,35.78]]
           GOLAN_EX = [[32.66, 35.55], [32.66, 35.79], [32.85, 35.80], [33.00, 35.80], [33.12, 35.805], [33.28, 35.82], [33.335, 35.84], [33.335, 35.55]]
@@ -116,7 +128,6 @@ jobs:
           OUT = os.environ.get('OUT_FILE', 'base.json')
           CHG = os.environ.get('CHG_FILE', 'changes.json')
 
-          # ---- سجل التغييرات: قارن الجديد بالقديم (للإشعارات داخل التطبيق) ----
           def key(o): return '%s%s' % (o['type'][0], o['id'])
           def slim(o):
               t = o.get('tags') or {}
@@ -135,7 +146,7 @@ jobs:
           except Exception:
               items = []
           prev_items = list(items)
-          items = [x for x in items if ok_geo(x)]      # نظّف السجل القديم من أي عنصر برّا الحدود
+          items = [x for x in items if ok_geo(x)]
           now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
           if old:
               new = {key(o): o for o in out}
@@ -144,20 +155,19 @@ jobs:
                   if k not in old: fresh.append(dict(slim(o), c='add', at=now))
                   elif old[k].get('timestamp') != o.get('timestamp'): fresh.append(dict(slim(o), c='mod', at=now))
               gone = [k for k in old if k not in new]
-              if len(gone) <= max(50, len(old) * 0.05):      # حماية: ما منعتبر حذف جماعي تغيير حقيقي
+              if len(gone) <= max(50, len(old) * 0.05):
                   for k in gone: fresh.append(dict(slim(old[k]), c='del', at=now))
               if len(fresh) > 3000:
                   print('تغييرات ضخمة (%d): مزامنة كاملة، ما منسجّلها' % len(fresh)); fresh = []
               items = fresh + items
           cutoff = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 14 * 86400))
           items = [x for x in items if x.get('at', '') >= cutoff][:400]
-          if not os.path.exists(CHG) or items != prev_items:      # ما منلمس الملف إذا ما تغيّر شي (بلا كوميت يومي فاضي)
+          if not os.path.exists(CHG) or items != prev_items:
               open(CHG, 'w', encoding='utf-8').write(json.dumps({'v': 1, 'updated': now, 'items': items}, ensure_ascii=False, separators=(',', ':')))
           print('تغييرات مسجّلة: %d' % len(items))
           open(OUT, 'w', encoding='utf-8').write(json.dumps(base, ensure_ascii=False, separators=(',', ':')))
           print('تم: %d عنصر' % len(out))
 
-          # ---- ملفات ثابتة للتطبيق (core.json + cells/ + places.json): بدل ما كل مستخدم يسأل Overpass مباشرة ----
           def fetch2(q, src_env):
               src = os.environ.get(src_env)
               if src:
@@ -165,10 +175,11 @@ jobs:
               last = None
               for attempt in range(2):
                   for u in ENDPOINTS:
+                      if time.time() - T0 > 1800: raise RuntimeError('انتهى الوقت المخصص للملفات الثابتة')
                       try:
                           req = urllib.request.Request(u, data=urllib.parse.urlencode({'data': q}).encode(),
                                                        headers={'User-Agent': 'darbak-base-updater/1.0 (github actions)'})
-                          with urllib.request.urlopen(req, timeout=290) as r:
+                          with urllib.request.urlopen(req, timeout=240) as r:
                               return json.load(r)
                       except Exception as e:
                           last = e
