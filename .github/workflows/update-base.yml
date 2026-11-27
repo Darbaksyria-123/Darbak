@@ -95,7 +95,8 @@ jobs:
 
           KEEP = {'aerodrome', 'aerodrome:type', 'aeroway', 'amenity', 'barrier', 'contact:mobile', 'contact:phone',
                   'contact:website', 'emergency', 'healthcare:speciality', 'highway', 'iata', 'icao', 'military',
-                  'name', 'name:ar', 'name:en', 'office', 'opening_hours', 'operator', 'phone', 'shop', 'tourism', 'website'}          out = []
+                  'name', 'name:ar', 'name:en', 'office', 'opening_hours', 'operator', 'phone', 'shop', 'tourism', 'website'}
+          out = []
           for e in els:
               t = {k: v for k, v in (e.get('tags') or {}).items() if k in KEEP or k.startswith('fuel:') or k.startswith('addr:')}
               o = {'type': e['type'], 'id': e['id'], 'timestamp': e.get('timestamp', ''), 'tags': t}
@@ -191,7 +192,8 @@ jobs:
           open(OUT, 'w', encoding='utf-8').write(json.dumps(base, ensure_ascii=False, separators=(',', ':')))
           print('تم: %d عنصر' % len(out))
 
-          # ---- ملفات ثابتة للتطبيق (core.json + cells/ + places.json): بدل ما كل مستخدم يسأل Overpass مباشرة ----          def fetch2(q, src_env):
+          # ---- ملفات ثابتة للتطبيق (core.json + cells/ + places.json): بدل ما كل مستخدم يسأل Overpass مباشرة ----
+          def fetch2(q, src_env):
               try:
                   return ovp(q, src_env, src_env, per=240, tries=4)
               except OvpError as ex:
