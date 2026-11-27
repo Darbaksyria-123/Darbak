@@ -26,13 +26,6 @@ jobs:
 
           T0 = time.time()
           SINCE = '2025-01-01T00:00:00Z'
-          QUERY = ('[out:json][timeout:180];area["ISO3166-1"="SY"]->.a;('
-                   'nwr(area.a)["amenity"~"^(hospital|pharmacy|fuel|restaurant|cafe|fast_food|police)$"](newer:"%s");'
-                   'nwr(area.a)["shop"~"^(bakery)$"](newer:"%s");'
-                   'nwr(area.a)["amenity"~"^(bureau_de_change|money_transfer)$"](newer:"%s");'
-                   'nwr(area.a)["shop"="money_transfer"](newer:"%s");'
-                   'nwr(area.a)["tourism"~"^(hotel|guest_house|motel)$"](newer:"%s");'
-                   ');out center meta;') % ((SINCE,) * 5)
           ENDPOINTS = ['https://overpass-api.de/api/interpreter',
                        'https://overpass.kumi.systems/api/interpreter',
                        'https://overpass.private.coffee/api/interpreter',
@@ -47,28 +40,54 @@ jobs:
               except SystemExit: raise
               except Exception as e: print('فحص الحداثة تعذّر:', e)
 
-          def fetch():
-              src = os.environ.get('SRC_FILE')
-              if src:
-                  return json.load(open(src, encoding='utf-8'))
-              last = None
-              for attempt in range(2):
-                  for u in ENDPOINTS:
-                      if time.time() - T0 > 1200: break
-                      try:
-                          req = urllib.request.Request(u, data=urllib.parse.urlencode({'data': QUERY}).encode(),
-                                                       headers={'User-Agent': 'darbak-base-updater/1.0 (github actions)'})
-                          with urllib.request.urlopen(req, timeout=200) as r:
-                              return json.load(r)
-                      except Exception as e:
-                          last = e
-                          print('فشل', u, e, file=sys.stderr)
-                          time.sleep(5)
-              raise SystemExit('كل الخوادم فشلت: %s' % last)
+          class OvpError(Exception): pass
+          def ovp(q, label, src_env=None, per=200, tries=6):
+              if src_env and os.environ.get(src_env):
+                  return json.load(open(os.environ[src_env], encoding='utf-8'))
+              last = 'ما في محاولة'
+              for i in range(tries):
+                  if time.time() - T0 > 1500: break
+                  u = ENDPOINTS[i % len(ENDPOINTS)]
+                  try:
+                      req = urllib.request.Request(u, data=urllib.parse.urlencode({'data': q}).encode(),
+                                                   headers={'User-Agent': 'darbak-base-updater/1.0 (github actions)'})
+                      with urllib.request.urlopen(req, timeout=per) as r:
+                          d = json.load(r)
+                      rm = str(d.get('remark') or '')
+                      if 'runtime error' in rm or 'timed out' in rm.lower() or 'out of memory' in rm.lower():
+                          raise RuntimeError('remark: ' + rm[:120])
+                      return d
+                  except Exception as e:
+                      last = '%s: %s' % (u.split('/')[2], str(e)[:140])
+                      print('فشل', label, last, file=sys.stderr)
+                      time.sleep(min(60, 8 * (i + 1)))
+              raise OvpError('%s | %s' % (label, last))
 
-          d = fetch()
-          els = d.get('elements') or []
+          def grp(body, n): return '[out:json][timeout:150];area["ISO3166-1"="SY"]->.a;(' + (body % ((SINCE,) * n)) + ');out center meta;'
+          GROUPS = [
+              ('طبي ومحروقات وشرطة', grp('nwr(area.a)["amenity"~"^(hospital|pharmacy|fuel|police)$"](newer:"%s");', 1)),
+              ('مطاعم ومقاهي', grp('nwr(area.a)["amenity"~"^(restaurant|cafe|fast_food)$"](newer:"%s");', 1)),
+              ('أفران وصرافة', grp('nwr(area.a)["shop"~"^(bakery|money_transfer)$"](newer:"%s");nwr(area.a)["amenity"~"^(bureau_de_change|money_transfer)$"](newer:"%s");', 2)),
+              ('فنادق', grp('nwr(area.a)["tourism"~"^(hotel|guest_house|motel)$"](newer:"%s");', 1)),
+          ]
+          try:
+              merged = {}; osm3s = {}
+              if os.environ.get('SRC_FILE'):
+                  d = json.load(open(os.environ['SRC_FILE'], encoding='utf-8'))
+                  for e in d.get('elements') or []: merged[(e['type'], e['id'])] = e
+                  osm3s = d.get('osm3s') or {}
+              else:
+                  for label, q in GROUPS:
+                      d = ovp(q, label)
+                      for e in d.get('elements') or []: merged[(e['type'], e['id'])] = e
+                      osm3s = d.get('osm3s') or osm3s
+                      print('%s: %d' % (label, len(d.get('elements') or [])))
+          except OvpError as ex:
+              print('::error title=تحديث الأساس فشل::Overpass ما ردّ: %s' % ex)
+              raise SystemExit('Overpass فشل: %s' % ex)
+          els = list(merged.values())
           if len(els) < 300:
+              print('::error title=تحديث الأساس فشل::عدد العناصر قليل (%d)' % len(els))
               raise SystemExit('عدد العناصر قليل (%d)، ما منحدّث' % len(els))
 
           KEEP = {'aerodrome', 'aerodrome:type', 'aeroway', 'amenity', 'barrier', 'contact:mobile', 'contact:phone',
@@ -123,7 +142,7 @@ jobs:
           dropped = len(out); out = [o for o in out if ok_geo(o)]
           print('حُذف %d عنصر برّا حدود سوريا' % (dropped - len(out)))
           out.sort(key=lambda o: (o['type'], o['id']))
-          base = {'v': 1, 'osm_base': (d.get('osm3s') or {}).get('timestamp_osm_base', ''), 'since': SINCE[:10],
+          base = {'v': 1, 'osm_base': osm3s.get('timestamp_osm_base', ''), 'since': SINCE[:10],
                   'license': '© مساهمو OpenStreetMap (ODbL)', 'elements': out}
           OUT = os.environ.get('OUT_FILE', 'base.json')
           CHG = os.environ.get('CHG_FILE', 'changes.json')
@@ -169,23 +188,10 @@ jobs:
           print('تم: %d عنصر' % len(out))
 
           def fetch2(q, src_env):
-              src = os.environ.get(src_env)
-              if src:
-                  return json.load(open(src, encoding='utf-8'))
-              last = None
-              for attempt in range(2):
-                  for u in ENDPOINTS:
-                      if time.time() - T0 > 1800: raise RuntimeError('انتهى الوقت المخصص للملفات الثابتة')
-                      try:
-                          req = urllib.request.Request(u, data=urllib.parse.urlencode({'data': q}).encode(),
-                                                       headers={'User-Agent': 'darbak-base-updater/1.0 (github actions)'})
-                          with urllib.request.urlopen(req, timeout=240) as r:
-                              return json.load(r)
-                      except Exception as e:
-                          last = e
-                          print('فشل', u, e, file=sys.stderr)
-                          time.sleep(5)
-              raise RuntimeError('كل الخوادم فشلت: %s' % last)
+              try:
+                  return ovp(q, src_env, src_env, per=240, tries=4)
+              except OvpError as ex:
+                  raise RuntimeError(str(ex))
           def clean(els):
               res = []
               for e in els:
