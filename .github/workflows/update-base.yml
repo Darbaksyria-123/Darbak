@@ -76,4 +76,237 @@ jobs:
           try:
               merged = {}; osm3s = {}
               if os.environ.get('SRC_FILE'):
-                  d = json.load(open(os.environ['SRC_FILE'], encoding='utf-8'
+                  d = json.load(open(os.environ['SRC_FILE'], encoding='utf-8'))
+                  for e in d.get('elements') or []: merged[(e['type'], e['id'])] = e
+                  osm3s = d.get('osm3s') or {}
+              else:
+                  for label, q in GROUPS:
+                      d = ovp(q, label)
+                      for e in d.get('elements') or []: merged[(e['type'], e['id'])] = e
+                      osm3s = d.get('osm3s') or osm3s
+                      print('%s: %d' % (label, len(d.get('elements') or [])))
+          except OvpError as ex:
+              print('::error title=تحديث الأساس فشل::Overpass ما ردّ: %s' % ex)
+              raise SystemExit('Overpass فشل: %s' % ex)
+          els = list(merged.values())
+          if len(els) < 300:
+              print('::error title=تحديث الأساس فشل::عدد العناصر قليل (%d)' % len(els))
+              raise SystemExit('عدد العناصر قليل (%d)، ما منحدّث' % len(els))
+
+          KEEP = {'aerodrome', 'aerodrome:type', 'aeroway', 'amenity', 'barrier', 'contact:mobile', 'contact:phone',
+                  'contact:website', 'emergency', 'healthcare:speciality', 'highway', 'iata', 'icao', 'military',
+                  'name', 'name:ar', 'name:en', 'office', 'opening_hours', 'operator', 'phone', 'shop', 'tourism', 'website'}          out = []
+          for e in els:
+              t = {k: v for k, v in (e.get('tags') or {}).items() if k in KEEP or k.startswith('fuel:') or k.startswith('addr:')}
+              o = {'type': e['type'], 'id': e['id'], 'timestamp': e.get('timestamp', ''), 'tags': t}
+              if 'lat' in e:
+                  o['lat'] = round(e['lat'], 6); o['lon'] = round(e['lon'], 6)
+              elif 'center' in e:
+                  o['center'] = {'lat': round(e['center']['lat'], 6), 'lon': round(e['center']['lon'], 6)}
+              else:
+                  continue
+              out.append(o)
+          # ---- فلتر الحدود: ما منحتفظ بأي خدمة برّا سوريا (نفس منطق التطبيق) ----
+          import math
+          SYR_POLY = [[35.93,35.9],[35.96,36.06],[36.08,36.22],[36.22,36.52],[36.55,36.66],[36.64,36.98],[36.66,37.3],[36.76,37.6],[36.85,38.0],[36.95,38.3],[36.8,38.8],[36.72,39.25],[36.82,39.7],[36.86,40.1],[37.0,40.6],[37.063,41.1],[37.065,41.6],[37.25,42.0],[37.27,42.4],[36.82,42.18],[36.6,41.85],[36.33,41.35],[35.85,41.18],[35.3,41.0],[34.75,40.95],[34.4,41.0],[34.0,40.15],[33.7,39.5],[33.37,38.8],[32.32,37.2],[32.31,36.75],[32.4,36.4],[32.585,36.02],[32.65,35.85],[32.7,35.65],[32.75,35.72],[33.05,35.78],[33.25,35.8],[33.43,35.85],[33.65,35.95],[33.85,36.3],[34.0,36.45],[34.2,36.52],[34.35,36.55],[34.55,36.52],[34.62,36.3],[34.62,35.93],[34.9,35.82],[35.3,35.72],[35.62,35.74],[35.85,35.78]]
+          GOLAN_EX = [[32.66, 35.55], [32.66, 35.79], [32.85, 35.80], [33.00, 35.80], [33.12, 35.805], [33.28, 35.82], [33.335, 35.84], [33.335, 35.55]]
+          def in_ring(la, lo, P):
+              ins = False; j = len(P) - 1
+              for i in range(len(P)):
+                  if (P[i][1] > lo) != (P[j][1] > lo) and la < (P[j][0] - P[i][0]) * (lo - P[i][1]) / (P[j][1] - P[i][1]) + P[i][0]: ins = not ins
+                  j = i
+              return ins
+          def edge_km(la, lo):
+              m = 1e9; kx = 111.32 * math.cos(math.radians(la)); ky = 110.57
+              for P in (SYR_POLY, GOLAN_EX):
+                  for i in range(len(P)):
+                      a, b = P[i], P[(i + 1) % len(P)]
+                      px, py, bx, by = (lo - a[1]) * kx, (la - a[0]) * ky, (b[1] - a[1]) * kx, (b[0] - a[0]) * ky
+                      L = bx * bx + by * by; t = max(0, min(1, (px * bx + py * by) / L)) if L else 0
+                      m = min(m, math.hypot(px - t * bx, py - t * by))
+              return m
+          TR_BOX = [[36.23, 36.52, 36.32, 36.62]]
+          TR_ADDR = re.compile(r'(^|[^a-z])(turkey|t[uü]rkiye|hatay|kilis|gaziantep|antakya|reyhanl[ıi]|yayladağı|yayladagi|nusaybin|ak[cç]akale|ceylanp[ıi]nar|karkam[ıi]ş|karkamis|[sş]anl[ıi]urfa|mardin)([^a-z]|$)', re.I)
+          def tr_tags(t):
+              if str(t.get('addr:country') or '').upper() == 'TR': return True
+              return any(k.startswith('addr:') and k not in ('addr:street', 'addr:housenumber') and TR_ADDR.search(str(v)) for k, v in t.items())
+          def he_tags(t):
+              for k in ('name', 'name:he', 'brand', 'operator', 'addr:street', 'addr:city'):
+                  if t.get(k) and re.search('[\u0590-\u05FF]', t[k]): return True
+              return bool(t.get('name:he')) and not t.get('name:ar')
+          def ok_geo(o):
+              pt = (o['lat'], o['lon']) if 'lat' in o else (o['center']['lat'], o['center']['lon'])
+              la, lo = pt; t = o.get('tags') or {}
+              if tr_tags(t) or he_tags(t): return False
+              if any(b[0] <= la <= b[2] and b[1] <= lo <= b[3] for b in TR_BOX): return False
+              if in_ring(la, lo, SYR_POLY) and not in_ring(la, lo, GOLAN_EX): return True
+              nm = (t.get('name:ar') or '') + (t.get('name') or '')
+              return re.search('[\u0600-\u06FF]', nm) is not None and edge_km(la, lo) <= 3
+          dropped = len(out); out = [o for o in out if ok_geo(o)]
+          print('حُذف %d عنصر برّا حدود سوريا' % (dropped - len(out)))
+          out.sort(key=lambda o: (o['type'], o['id']))
+          base = {'v': 1, 'osm_base': osm3s.get('timestamp_osm_base', ''), 'since': SINCE[:10],
+                  'license': '© مساهمو OpenStreetMap (ODbL)', 'elements': out}
+          OUT = os.environ.get('OUT_FILE', 'base.json')
+          CHG = os.environ.get('CHG_FILE', 'changes.json')
+
+          # ---- سجل التغييرات: قارن الجديد بالقديم (للإشعارات داخل التطبيق) ----
+          def key(o): return '%s%s' % (o['type'][0], o['id'])
+          def slim(o):
+              t = o.get('tags') or {}
+              keep = {k: v for k, v in t.items() if k in ('name', 'name:ar', 'name:en', 'amenity', 'shop', 'tourism', 'emergency', 'barrier', 'highway', 'office', 'aeroway', 'phone', 'contact:phone', 'addr:country', 'addr:city', 'addr:district', 'addr:province', 'addr:state')}
+              r = {'t': o['type'], 'i': o['id'], 'tags': keep}
+              if 'lat' in o: r['lat'] = o['lat']; r['lon'] = o['lon']
+              else: r['lat'] = o['center']['lat']; r['lon'] = o['center']['lon']
+              return r
+          try:
+              old = {key(o): o for o in json.load(open(OUT, encoding='utf-8')).get('elements', []) if ok_geo(o)}
+          except Exception:
+              old = None
+          try:
+              chg = json.load(open(CHG, encoding='utf-8'))
+              items = chg.get('items') or []
+          except Exception:
+              items = []
+          prev_items = list(items)
+          items = [x for x in items if ok_geo(x)]      # نظّف السجل القديم من أي عنصر برّا الحدود
+          now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+          if old:
+              new = {key(o): o for o in out}
+              fresh = []
+              for k, o in new.items():
+                  if k not in old: fresh.append(dict(slim(o), c='add', at=now))
+                  elif old[k].get('timestamp') != o.get('timestamp'): fresh.append(dict(slim(o), c='mod', at=now))
+              gone = [k for k in old if k not in new]
+              if len(gone) <= max(50, len(old) * 0.05):      # حماية: ما منعتبر حذف جماعي تغيير حقيقي
+                  for k in gone: fresh.append(dict(slim(old[k]), c='del', at=now))
+              if len(fresh) > 3000:
+                  print('تغييرات ضخمة (%d): مزامنة كاملة، ما منسجّلها' % len(fresh)); fresh = []
+              items = fresh + items
+          cutoff = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - 14 * 86400))
+          items = [x for x in items if x.get('at', '') >= cutoff][:400]
+          if not os.path.exists(CHG) or items != prev_items:      # ما منلمس الملف إذا ما تغيّر شي (بلا كوميت يومي فاضي)
+              open(CHG, 'w', encoding='utf-8').write(json.dumps({'v': 1, 'updated': now, 'items': items}, ensure_ascii=False, separators=(',', ':')))
+          print('تغييرات مسجّلة: %d' % len(items))
+          open(OUT, 'w', encoding='utf-8').write(json.dumps(base, ensure_ascii=False, separators=(',', ':')))
+          print('تم: %d عنصر' % len(out))
+
+          # ---- ملفات ثابتة للتطبيق (core.json + cells/ + places.json): بدل ما كل مستخدم يسأل Overpass مباشرة ----          def fetch2(q, src_env):
+              try:
+                  return ovp(q, src_env, src_env, per=240, tries=4)
+              except OvpError as ex:
+                  raise RuntimeError(str(ex))
+          def clean(els):
+              res = []
+              for e in els:
+                  t = {k: v for k, v in (e.get('tags') or {}).items() if k in KEEP or k.startswith('fuel:') or k.startswith('addr:')}
+                  o = {'type': e['type'], 'id': e['id'], 'timestamp': e.get('timestamp', ''), 'tags': t}
+                  if 'lat' in e: o['lat'] = round(e['lat'], 6); o['lon'] = round(e['lon'], 6)
+                  elif 'center' in e: o['center'] = {'lat': round(e['center']['lat'], 6), 'lon': round(e['center']['lon'], 6)}
+                  else: continue
+                  if ok_geo(o): res.append(o)
+              res.sort(key=lambda o: (o['type'], o['id']))
+              return res
+          def pt_of(o):
+              return (o['lat'], o['lon']) if 'lat' in o else (o['center']['lat'], o['center']['lon'])
+          def write_if_changed(path, obj):
+              txt = json.dumps(obj, ensure_ascii=False, separators=(',', ':'))
+              try:
+                  if open(path, encoding='utf-8').read() == txt: return
+              except Exception: pass
+              open(path, 'w', encoding='utf-8').write(txt)
+          try:
+              Q2 = ('[out:json][timeout:280];area["ISO3166-1"="SY"]->.a;('
+                    'nwr(area.a)["amenity"~"^(hospital|police|fire_station|pharmacy|fuel|clinic|restaurant|cafe|fast_food|bureau_de_change|money_transfer|townhall)$"];'
+                    'nwr(area.a)["emergency"="ambulance_station"];nwr(area.a)["aeroway"="aerodrome"];nwr(area.a)["barrier"="border_control"];'
+                    'nwr(area.a)["tourism"~"^(hotel|guest_house|hostel|motel|apartment)$"];nwr(area.a)["highway"~"^(rest_area|services)$"];'
+                    'nwr(area.a)["shop"~"^(bakery|money_transfer)$"];nwr(area.a)["office"="government"]["name"~"نفوس"];'
+                    ');out center meta;')
+              d2 = fetch2(Q2, 'SRC2_FILE')
+              all2 = clean(d2.get('elements') or [])
+              if len(all2) < 2000:
+                  raise RuntimeError('عدد العناصر قليل (%d)، ما منحدّث الملفات الثابتة' % len(all2))
+              def is_core(t):
+                  return t.get('amenity') in ('hospital', 'police', 'fire_station', 'townhall') or t.get('emergency') == 'ambulance_station' or 'aeroway' in t and t.get('aeroway') == 'aerodrome' or t.get('barrier') == 'border_control'
+              core = [o for o in all2 if is_core(o['tags'])]
+              rest = [o for o in all2 if not is_core(o['tags'])]
+              stamp = (d2.get('osm3s') or {}).get('timestamp_osm_base', '')
+              CORE_OUT = os.environ.get('CORE_FILE', 'core.json'); CELL_DIR = os.environ.get('CELL_DIR', 'cells')
+              write_if_changed(CORE_OUT, {'v': 1, 'osm_base': stamp, 'elements': core})
+              os.makedirs(CELL_DIR, exist_ok=True)
+              grid = {}
+              for o in rest:
+                  la, lo = pt_of(o); grid.setdefault((int(la // 0.5), int(lo // 0.5)), []).append(o)
+              for i in range(64, 76):
+                  for j in range(71, 86):
+                      write_if_changed('%s/%d_%d.json' % (CELL_DIR, i, j), {'v': 1, 'osm_base': stamp, 'elements': grid.get((i, j), [])})
+              print('ملفات ثابتة: core=%d، خلايا=%d عنصر' % (len(core), len(rest)))
+          except Exception as ex:
+              print('تعذّر تحديث الملفات الثابتة (التطبيق بيرجع لـ Overpass):', ex, file=sys.stderr)
+          try:
+              Q3 = '[out:json][timeout:120];area["ISO3166-1"="SY"]->.a;node(area.a)["place"~"^(city|town|village|hamlet)$"]["name"];out body;'
+              d3 = fetch2(Q3, 'SRC3_FILE')
+              pl = []
+              for e in d3.get('elements') or []:
+                  t = e.get('tags') or {}; nm = t.get('name:ar') or t.get('name')
+                  if 'lat' not in e or not nm: continue
+                  if not (in_ring(e['lat'], e['lon'], SYR_POLY) and not in_ring(e['lat'], e['lon'], GOLAN_EX)): continue
+                  pl.append([round(e['lat'], 4), round(e['lon'], 4), str(nm)[:40], (t.get('place') or 'v')[0], str(t.get('name:en') or '')[:40]])
+              pl.sort(key=lambda x: (x[0], x[1], x[2]))
+              if len(pl) < 500: raise RuntimeError('عدد البلدات قليل (%d)' % len(pl))
+              write_if_changed(os.environ.get('PLACES_FILE', 'places.json'), {'v': 1, 'items': pl})
+              print('بلدات: %d' % len(pl))
+          except Exception as ex:
+              print('تعذّر تحديث places.json:', ex, file=sys.stderr)
+          PY
+
+      - name: حدّث مواقع المعابر الدقيقة (اختياري)
+        continue-on-error: true
+        run: |
+          python3 - <<'PY'
+          import json, time, urllib.parse, urllib.request, sys
+          Q = '[out:json][timeout:90];(nwr["barrier"="border_control"](32.2,35.5,37.5,42.5);nwr["amenity"="border_control"](32.2,35.5,37.5,42.5););out center tags;'
+          for u in ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter']:
+              try:
+                  req = urllib.request.Request(u, data=urllib.parse.urlencode({'data': Q}).encode(), headers={'User-Agent': 'darbak-base-updater/1.0 (github actions)'})
+                  with urllib.request.urlopen(req, timeout=120) as r: d = json.load(r)
+                  items = []
+                  for e in d.get('elements', []):
+                      la = e.get('lat') if 'lat' in e else (e.get('center') or {}).get('lat')
+                      lo = e.get('lon') if 'lon' in e else (e.get('center') or {}).get('lon')
+                      if la is None or lo is None: continue
+                      t = e.get('tags') or {}
+                      items.append({'la': round(la, 6), 'lo': round(lo, 6), 'n': t.get('name:ar') or t.get('name') or ''})
+                  items.sort(key=lambda x: (x['la'], x['lo']))
+                  if len(items) >= 3:
+                      open('crossings.json', 'w', encoding='utf-8').write(json.dumps({'v': 1, 'items': items}, ensure_ascii=False, separators=(',', ':')))
+                      print('نقاط حدود: %d' % len(items))
+                  break
+              except Exception as e:
+                  print('فشل', u, e, file=sys.stderr); time.sleep(5)
+          PY
+
+      - name: احفظ التغيير
+        run: |
+          if git status --porcelain -- base.json changes.json crossings.json core.json cells places.json | grep -q .; then :; else echo "ما في تغيير"; exit 0; fi
+          git config user.name "darbak-bot"
+          git config user.email "darbak-bot@users.noreply.github.com"
+          git add base.json changes.json
+          [ -f crossings.json ] && git add crossings.json || true
+          [ -f core.json ] && git add core.json || true
+          [ -d cells ] && git add cells || true
+          [ -f places.json ] && git add places.json || true
+          git commit -m "تحديث تلقائي لـ base.json"
+          git fetch --unshallow origin main 2>/dev/null || true
+          ok=0
+          for i in 1 2 3 4 5; do
+            git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null; sleep 5; continue; }
+            if git push; then ok=1; break; fi
+            sleep $((i*5))
+          done
+          [ "$ok" = 1 ] || { echo "::error title=الحفظ فشل::تعذّر الدفع بعد 5 محاولات"; exit 1; }
+
+      - name: شغّل بناء الموقع
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || true
