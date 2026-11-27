@@ -293,7 +293,14 @@ jobs:
           [ -d cells ] && git add cells || true
           [ -f places.json ] && git add places.json || true
           git commit -m "تحديث تلقائي لـ base.json"
-          git push
+          git fetch --unshallow origin main 2>/dev/null || true
+ok=0
+for i in 1 2 3 4 5; do
+  git pull --rebase -X theirs origin main || { git rebase --abort 2>/dev/null; sleep 5; continue; }
+  if git push; then ok=1; break; fi
+  sleep $((i*5))
+done
+[ "$ok" = 1 ] || { echo "::error title=الحفظ فشل::تعذّر الدفع بعد 5 محاولات"; exit 1; } 
 
       - name: شغّل بناء الموقع
         env:
